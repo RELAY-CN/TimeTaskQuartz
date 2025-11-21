@@ -173,6 +173,7 @@ taskManager.task("dsl-example") {
 ### 要求
 
 - JDK 8+
+> 当前使用 `Java11` 构建
 - Gradle 8.14.2+
 
 ### 构建命令
