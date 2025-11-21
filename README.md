@@ -16,8 +16,9 @@
 
 ```kotlin
 // build.gradle.kts
+// 注 当前版本号为哈希(Short)
 dependencies {
-    implementation("kim.der.TimeTaskQuartz:TimeTaskQuartz:版本号")
+    implementation("kim.der:TimeTaskQuartz:版本号")
 }
 ```
 
