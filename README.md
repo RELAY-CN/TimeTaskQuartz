@@ -16,8 +16,9 @@
 
 ```kotlin
 // build.gradle.kts
+// 注 当前版本号为哈希(Short)
 dependencies {
-    implementation("kim.der.TimeTaskQuartz:TimeTaskQuartz:版本号")
+    implementation("kim.der:TimeTaskQuartz:版本号")
 }
 ```
 
@@ -172,6 +173,7 @@ taskManager.task("dsl-example") {
 ### 要求
 
 - JDK 8+
+> 当前使用 `Java11` 构建
 - Gradle 8.14.2+
 
 ### 构建命令
