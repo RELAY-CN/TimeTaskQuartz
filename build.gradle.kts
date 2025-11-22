@@ -15,10 +15,11 @@ import java.nio.file.StandardCopyOption
 
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.2.21"
+    id("java-library")
     id("maven-publish")
 }
 
-group = "kim.der.TimeTaskQuartz"
+group = "kim.der"
 version = getGitCommitHash()
 
 repositories {
@@ -57,6 +58,10 @@ kotlin {
     }
 }
 
+java {
+    withSourcesJar()
+}
+
 tasks.withType<JavaCompile> {
     // 使用Java11做标准语法并编译
     sourceCompatibility = JvmTarget.JVM_11.target
@@ -68,8 +73,6 @@ tasks.withType<JavaCompile> {
 tasks.jar {
     doLast {
         makeGitCommitHashFile()
-        makeDependTree()
-        makeDirTree()
     }
 }
 
@@ -82,7 +85,7 @@ configureGraalVmAgent()
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            groupId = "kim.der.TimeTaskQuartz"
+            groupId = "kim.der"
             artifactId = project.name
             version = getGitCommitHash()
             
@@ -153,74 +156,6 @@ fun Project.makeGitCommitHashFile() {
         val gitHashFile = File("${rootDir}/src/main/resources/gradleRes/${name}/GitCommitHash.txt")
         gitHashFile.fuckGithub()
         gitHashFile.writeText(getGitCommitHash())
-    } catch (_: Exception) {
-        // 忽略
-    }
-}
-
-fun Project.makeDependTree() {
-    try {
-        val implementationFile = File("${rootDir}/src/main/resources/gradleRes/${name}/implementation.txt")
-        val compileOnlyFile = File("${rootDir}/src/main/resources/gradleRes/${name}/compileOnly.txt")
-
-        implementationFile.fuckGithub()
-        compileOnlyFile.fuckGithub()
-
-        var implementation = ""
-        var compileOnly = ""
-        val onlyList = ArrayList<String>()
-
-        configurations.findByName("compileOnly")?.allDependencies?.forEach {
-            val result = configurations.detachedConfiguration(it).resolvedConfiguration
-            result.firstLevelModuleDependencies.forEach { moduleDependency ->
-                moduleDependency.allModuleArtifacts.forEach { dependency ->
-                    onlyList.add(dependency.moduleVersion.id.group + dependency.moduleVersion.id.name + (dependency.classifier ?: ""))
-                }
-            }
-        }
-
-        configurations.findByName("compileClasspath")?.resolvedConfiguration?.resolvedArtifacts?.forEach { artifact ->
-            val type = if (artifact.moduleVersion.id.group == rootProject.name) "project" else artifact.type
-            val classifier = artifact.classifier ?: ""
-            if (onlyList.contains(artifact.moduleVersion.id.group + artifact.moduleVersion.id.name + classifier)) {
-                compileOnly +=
-                    "$type:${artifact.moduleVersion.id.group}:${artifact.moduleVersion.id.name}:${artifact.moduleVersion.id.version}:$classifier${System.lineSeparator()}"
-            } else {
-                implementation +=
-                    "$type:${artifact.moduleVersion.id.group}:${artifact.moduleVersion.id.name}:${artifact.moduleVersion.id.version}:$classifier${System.lineSeparator()}"
-            }
-        }
-
-        implementationFile.writeText(implementation)
-        compileOnlyFile.writeText(compileOnly)
-    } catch (_: Exception) {
-        // 忽略
-    }
-}
-
-fun Project.makeDirTree() {
-    try {
-        val dirTreeFile = File("${rootDir}/src/main/resources/gradleRes/${name}/FileList.txt")
-        val projectFile = layout.buildDirectory.get().asFile
-
-        dirTreeFile.fuckGithub()
-
-        val builder = ArrayList<String>()
-
-        fun addTreeFile(file: File) {
-            file.walkTopDown().forEach {
-                if (!it.isDirectory) {
-                    val relativePath = it.relativeTo(file).path
-                    builder.add(relativePath)
-                }
-            }
-        }
-
-        addTreeFile(File(projectFile, "classes"))
-        addTreeFile(File(projectFile, "resources"))
-
-        val dirTreeContent = builder.joinToString(System.lineSeparator()!!).replace("\\", "/")
-        dirTreeFile.writeText(dirTreeContent)
     } catch (_: Exception) {
         // 忽略
     }
