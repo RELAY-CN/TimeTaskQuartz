@@ -88,9 +88,9 @@ publishing {
             groupId = "kim.der"
             artifactId = project.name
             version = getGitCommitHash()
-            
+
             from(project.components.getByName("java"))
-            
+
             pom {
                 scm {
                     url.set("https://github.com/RELAY-CN/TimeTaskQuartz")
@@ -122,7 +122,7 @@ publishing {
             }
         }
     }
-    
+
     repositories {
         maven {
             name = "maven-releases"
@@ -137,8 +137,8 @@ publishing {
 }
 
 // Helper functions from buildSrc
-fun getGitCommitHash(): String {
-    return try {
+fun getGitCommitHash(): String =
+    try {
         Runtime
             .getRuntime()
             .exec(arrayOf("git", "rev-parse", "--short", "HEAD"))
@@ -149,11 +149,10 @@ fun getGitCommitHash(): String {
     } catch (_: Exception) {
         "unknown"
     }
-}
 
 fun Project.makeGitCommitHashFile() {
     try {
-        val gitHashFile = File("${rootDir}/src/main/resources/gradleRes/${name}/GitCommitHash.txt")
+        val gitHashFile = File("$rootDir/src/main/resources/gradleRes/$name/GitCommitHash.txt")
         gitHashFile.fuckGithub()
         gitHashFile.writeText(getGitCommitHash())
     } catch (_: Exception) {
@@ -198,16 +197,22 @@ fun Project.configureGraalVmAgent() {
 
     tasks.withType<Test>().configureEach {
         if (project.findProperty("disableGraalVmAgent") != "true") {
-            val agentOutputDir = File(project.layout.buildDirectory.get().asFile, "native-image-agent/$name")
+            val agentOutputDir =
+                File(
+                    project.layout.buildDirectory
+                        .get()
+                        .asFile,
+                    "native-image-agent/$name",
+                )
             agentOutputDir.mkdirs()
 
             jvmArgs(
                 "-XX:+EnableDynamicAgentLoading",
                 "-Djdk.instrument.traceUsage=false",
-                "-agentlib:native-image-agent=" +
-                    "config-output-dir=${agentOutputDir.absolutePath}," +
-                    "experimental-class-define-support," +
-                    "access-filter-file=${createAccessFilterFile(project).absolutePath}",
+                "-agentlib:native-image-agent=" + "config-output-dir=${agentOutputDir.absolutePath}," + "experimental-class-define-support," +
+                    "access-filter-file=${
+                        createAccessFilterFile(project).absolutePath
+                    }",
             )
 
             doLast {
@@ -219,7 +224,10 @@ fun Project.configureGraalVmAgent() {
 }
 
 private fun createAccessFilterFile(project: Project): File {
-    val buildDir = project.layout.buildDirectory.get().asFile
+    val buildDir =
+        project.layout.buildDirectory
+            .get()
+            .asFile
     val filterDir = File(buildDir, "graalvm-filters")
     filterDir.mkdirs()
 
@@ -253,7 +261,10 @@ private fun createAccessFilterFile(project: Project): File {
     return filterFile
 }
 
-private fun Project.copyGraalConfigs(sourceDir: File, targetDir: File) {
+private fun Project.copyGraalConfigs(
+    sourceDir: File,
+    targetDir: File,
+) {
     targetDir.mkdirs()
 
     val propertiesFile = File(targetDir, "native-image.properties")
@@ -266,14 +277,12 @@ private fun Project.copyGraalConfigs(sourceDir: File, targetDir: File) {
         )
     }
 
-    sourceDir.listFiles()
-        ?.filter { it.isFile && it.name.endsWith(".json") }
-        ?.forEach { sourceFile ->
-            val targetFile = File(targetDir, sourceFile.name)
-            Files.copy(
-                sourceFile.toPath(),
-                targetFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
+    sourceDir.listFiles()?.filter { it.isFile && it.name.endsWith(".json") }?.forEach { sourceFile ->
+        val targetFile = File(targetDir, sourceFile.name)
+        Files.copy(
+            sourceFile.toPath(),
+            targetFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
     }
 }
