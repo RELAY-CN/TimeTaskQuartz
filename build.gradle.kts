@@ -209,7 +209,7 @@ fun Project.configureGraalVmAgent() {
             jvmArgs(
                 "-XX:+EnableDynamicAgentLoading",
                 "-Djdk.instrument.traceUsage=false",
-                "-agentlib:native-image-agent=" + "config-output-dir=${agentOutputDir.absolutePath}," + "experimental-class-define-support," +
+                "-agentlib:native-image-agent=" + "config-output-dir=${agentOutputDir.absolutePath}," +
                     "access-filter-file=${
                         createAccessFilterFile(project).absolutePath
                     }",
