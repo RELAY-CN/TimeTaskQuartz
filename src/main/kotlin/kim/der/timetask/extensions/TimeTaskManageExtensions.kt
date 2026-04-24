@@ -21,17 +21,19 @@ const val DEFAULT_GROUP = "default"
  *
  * 任务在指定延迟后执行一次，然后自动删除。
  *
- * @param name 任务名称
- * @param delayMillis 延迟毫秒数
- * @param description 任务描述，默认为空
- * @param action 要执行的操作
- *
  * ## 示例
  * ```kotlin
  * manager.delay("reminder", 5.seconds) {
  *     println("5秒后执行")
  * }
  * ```
+ *
+ * @param name 任务名称
+ * @param delayMillis 延迟毫秒数
+ * @param description 任务描述，默认为空
+ * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.delay(
     name: String,
@@ -56,6 +58,8 @@ fun TimeTaskManage.delay(
  * @param name 任务名称
  * @param description 任务描述
  * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.runNow(
     name: String,
@@ -78,6 +82,8 @@ fun TimeTaskManage.runNow(
  * @param timestamp 执行时间（Unix 时间戳，毫秒）
  * @param description 任务描述
  * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.runAt(
     name: String,
@@ -97,18 +103,20 @@ fun TimeTaskManage.runAt(
 /**
  * 添加固定间隔的定时任务（使用默认组）。
  *
- * @param name 任务名称
- * @param intervalMillis 执行间隔（毫秒）
- * @param delayMillis 延迟开始时间（毫秒），默认为 0
- * @param description 任务描述
- * @param action 要执行的操作
- *
  * ## 示例
  * ```kotlin
  * manager.every("heartbeat", 10.seconds) {
  *     println("每10秒执行")
  * }
  * ```
+ *
+ * @param name 任务名称
+ * @param intervalMillis 执行间隔（毫秒）
+ * @param delayMillis 延迟开始时间（毫秒），默认为 0
+ * @param description 任务描述
+ * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.every(
     name: String,
@@ -130,17 +138,19 @@ fun TimeTaskManage.every(
 /**
  * 添加 Cron 表达式的定时任务（使用默认组）。
  *
- * @param name 任务名称
- * @param cron Cron 表达式
- * @param description 任务描述
- * @param action 要执行的操作
- *
  * ## 示例
  * ```kotlin
  * manager.cron("daily-report", CronExpressions.DAILY_NOON) {
  *     println("每天中午执行")
  * }
  * ```
+ *
+ * @param name 任务名称
+ * @param cron Cron 表达式
+ * @param description 任务描述
+ * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.cron(
     name: String,
@@ -164,6 +174,8 @@ fun TimeTaskManage.cron(
  *
  * @param name 任务名称
  * @return 如果任务存在返回 `true`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.contains(name: String): Boolean = contains(name, DEFAULT_GROUP)
 
@@ -172,6 +184,8 @@ fun TimeTaskManage.contains(name: String): Boolean = contains(name, DEFAULT_GROU
  *
  * @param name 任务名称
  * @return 如果暂停成功返回 `true`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.pause(name: String): Boolean = pause(name, DEFAULT_GROUP)
 
@@ -180,6 +194,8 @@ fun TimeTaskManage.pause(name: String): Boolean = pause(name, DEFAULT_GROUP)
  *
  * @param name 任务名称
  * @return 如果恢复成功返回 `true`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.resume(name: String): Boolean = unPause(name, DEFAULT_GROUP)
 
@@ -188,6 +204,8 @@ fun TimeTaskManage.resume(name: String): Boolean = unPause(name, DEFAULT_GROUP)
  *
  * @param name 任务名称
  * @return 如果删除成功返回 `true`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.remove(name: String): Boolean = remove(name, DEFAULT_GROUP)
 
@@ -196,6 +214,8 @@ fun TimeTaskManage.remove(name: String): Boolean = remove(name, DEFAULT_GROUP)
  *
  * @param name 任务名称
  * @return 如果触发成功返回 `true`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.triggerNow(name: String): Boolean = triggerNow(name, DEFAULT_GROUP)
 
@@ -204,6 +224,8 @@ fun TimeTaskManage.triggerNow(name: String): Boolean = triggerNow(name, DEFAULT_
  *
  * @param name 任务名称
  * @return 任务状态，如果任务不存在返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getState(name: String): JobState? = getJobState(name, DEFAULT_GROUP)
 
@@ -214,6 +236,8 @@ fun TimeTaskManage.getState(name: String): JobState? = getJobState(name, DEFAULT
  *
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 暂停的任务数量
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.pauseAll(group: String = DEFAULT_GROUP): Int {
     return try {
@@ -230,6 +254,8 @@ fun TimeTaskManage.pauseAll(group: String = DEFAULT_GROUP): Int {
  *
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 恢复的任务数量
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.resumeAll(group: String = DEFAULT_GROUP): Int {
     return try {
@@ -246,6 +272,8 @@ fun TimeTaskManage.resumeAll(group: String = DEFAULT_GROUP): Int {
  *
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 删除的任务数量
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.removeAll(group: String = DEFAULT_GROUP): Int {
     return try {
@@ -264,6 +292,8 @@ fun TimeTaskManage.removeAll(group: String = DEFAULT_GROUP): Int {
  * 清空所有任务。
  *
  * @return 删除的任务数量
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.clearAll(): Int {
     return try {
@@ -283,6 +313,8 @@ fun TimeTaskManage.clearAll(): Int {
  * 获取所有任务组名。
  *
  * @return 组名列表
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getAllGroupNames(): List<String> {
     return try {
@@ -297,6 +329,8 @@ fun TimeTaskManage.getAllGroupNames(): List<String> {
  *
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 任务名称列表
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getJobNames(group: String = DEFAULT_GROUP): List<String> {
     return try {
@@ -312,6 +346,8 @@ fun TimeTaskManage.getJobNames(group: String = DEFAULT_GROUP): List<String> {
  * 获取所有任务的 JobKey。
  *
  * @return JobKey 列表
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getAllJobs(): List<JobKey> {
     return try {
@@ -328,6 +364,8 @@ fun TimeTaskManage.getAllJobs(): List<JobKey> {
  *
  * @param group 任务组名
  * @return JobKey 列表
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getJobsInGroup(group: String): List<JobKey> {
     return try {
@@ -343,6 +381,8 @@ fun TimeTaskManage.getJobsInGroup(group: String): List<JobKey> {
  * @param name 任务名称
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 下次执行时间（Unix 时间戳，毫秒），如果任务不存在返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getNextFireTime(name: String, group: String = DEFAULT_GROUP): Long? {
     return try {
@@ -359,6 +399,8 @@ fun TimeTaskManage.getNextFireTime(name: String, group: String = DEFAULT_GROUP):
  * @param name 任务名称
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 上次执行时间（Unix 时间戳，毫秒），如果任务未执行过返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getPreviousFireTime(name: String, group: String = DEFAULT_GROUP): Long? {
     return try {
@@ -375,6 +417,8 @@ fun TimeTaskManage.getPreviousFireTime(name: String, group: String = DEFAULT_GRO
  * @param name 任务名称
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 任务描述，如果任务不存在返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getDescription(name: String, group: String = DEFAULT_GROUP): String? {
     return try {
@@ -394,6 +438,8 @@ fun TimeTaskManage.getDescription(name: String, group: String = DEFAULT_GROUP): 
  * @param name 任务名称
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 执行次数，如果不可用返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getExecutionCount(name: String, group: String = DEFAULT_GROUP): Int? {
     return try {
@@ -415,6 +461,8 @@ fun TimeTaskManage.getExecutionCount(name: String, group: String = DEFAULT_GROUP
  * @property state 任务状态
  * @property nextFireTime 下次执行时间
  * @property previousFireTime 上次执行时间
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 data class JobInfo(
     val name: String,
@@ -431,6 +479,8 @@ data class JobInfo(
  * @param name 任务名称
  * @param group 任务组名，默认为 [DEFAULT_GROUP]
  * @return 任务信息，如果任务不存在返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getJobInfo(name: String, group: String = DEFAULT_GROUP): JobInfo? {
     if (!contains(name, group)) return null
@@ -449,6 +499,8 @@ fun TimeTaskManage.getJobInfo(name: String, group: String = DEFAULT_GROUP): JobI
  * 获取所有任务的详细信息。
  *
  * @return 任务信息列表
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getAllJobInfo(): List<JobInfo> {
     return getAllJobs().mapNotNull { jobKey ->
@@ -461,6 +513,8 @@ fun TimeTaskManage.getAllJobInfo(): List<JobInfo> {
  *
  * @param group 任务组名
  * @return 任务信息列表
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.getJobInfoInGroup(group: String): List<JobInfo> {
     return getJobsInGroup(group).mapNotNull { jobKey ->

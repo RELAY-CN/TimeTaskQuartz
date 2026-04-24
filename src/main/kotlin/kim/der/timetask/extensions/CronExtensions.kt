@@ -21,9 +21,10 @@ package kim.der.timetask.extensions
  * }
  * ```
  *
- * @author Dr (dr@der.kim)
- * @since 1.0.0
  * @see CronBuilder
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
+ * @since 1.0.0
  */
 object CronExpressions {
     // ==================== 秒级 ====================
@@ -171,9 +172,10 @@ object CronExpressions {
  * val cron3 = CronBuilder.weeklyAt(DayOfWeek.MONDAY, 9, 0)
  * ```
  *
- * @author Dr (dr@der.kim)
- * @since 1.0.0
  * @see CronExpressions
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
+ * @since 1.0.0
  */
 object CronBuilder {
     /**
@@ -357,6 +359,8 @@ object CronBuilder {
  *
  * @param cron 要验证的 Cron 表达式
  * @return 如果表达式有效返回 `true`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun isValidCron(cron: String): Boolean {
     return try {
@@ -372,6 +376,8 @@ fun isValidCron(cron: String): Boolean {
  *
  * @param cron Cron 表达式
  * @return 下次触发时间的 Unix 时间戳（毫秒），如果表达式无效返回 `null`
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun getNextFireTime(cron: String): Long? {
     return try {
@@ -387,6 +393,8 @@ fun getNextFireTime(cron: String): Long? {
  *
  * @param cron Cron 表达式
  * @return 表达式描述，如果无法解析返回原表达式
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun describeCron(cron: String): String {
     return try {

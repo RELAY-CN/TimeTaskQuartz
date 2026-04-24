@@ -41,6 +41,7 @@ import java.util.TimeZone
  *
  * @property scheduler 内部使用的 Quartz [Scheduler] 实例
  * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  * @since 1.0.0
  */
 @Suppress("UNUSED")
@@ -599,6 +600,8 @@ class TimeTaskManage {
 /**
  * 任务状态枚举。
  *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  * @since 1.1.0
  */
 enum class JobState {

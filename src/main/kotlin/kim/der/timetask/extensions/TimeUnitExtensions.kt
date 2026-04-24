@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit
  * val delay = 5.seconds  // 5000L
  * manager.delay("task", 10.seconds) { ... }
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Int.seconds: Long
     get() = TimeUnit.SECONDS.toMillis(this.toLong())
@@ -27,6 +30,9 @@ val Int.seconds: Long
  * ```kotlin
  * val interval = 5.minutes  // 300000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Int.minutes: Long
     get() = TimeUnit.MINUTES.toMillis(this.toLong())
@@ -38,6 +44,9 @@ val Int.minutes: Long
  * ```kotlin
  * val interval = 2.hours  // 7200000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Int.hours: Long
     get() = TimeUnit.HOURS.toMillis(this.toLong())
@@ -49,6 +58,9 @@ val Int.hours: Long
  * ```kotlin
  * val interval = 1.days  // 86400000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Int.days: Long
     get() = TimeUnit.DAYS.toMillis(this.toLong())
@@ -62,6 +74,9 @@ val Int.days: Long
  * ```kotlin
  * val delay = 500.millis  // 500L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Int.millis: Long
     get() = this.toLong()
@@ -75,6 +90,9 @@ val Int.millis: Long
  * ```kotlin
  * val delay = 5L.seconds  // 5000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Long.seconds: Long
     get() = TimeUnit.SECONDS.toMillis(this)
@@ -86,6 +104,9 @@ val Long.seconds: Long
  * ```kotlin
  * val interval = 5L.minutes  // 300000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Long.minutes: Long
     get() = TimeUnit.MINUTES.toMillis(this)
@@ -97,6 +118,9 @@ val Long.minutes: Long
  * ```kotlin
  * val interval = 2L.hours  // 7200000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Long.hours: Long
     get() = TimeUnit.HOURS.toMillis(this)
@@ -108,6 +132,9 @@ val Long.hours: Long
  * ```kotlin
  * val interval = 1L.days  // 86400000L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Long.days: Long
     get() = TimeUnit.DAYS.toMillis(this)
@@ -121,6 +148,9 @@ val Long.days: Long
  * ```kotlin
  * val delay = 500L.millis  // 500L
  * ```
+ *
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 val Long.millis: Long
     get() = this
@@ -138,6 +168,8 @@ val Long.millis: Long
  * ```
  *
  * @return 格式化的时间字符串
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.toReadableTime(): String {
     if (this < 0) return "0ms"
@@ -163,6 +195,8 @@ fun Long.toReadableTime(): String {
  * 将毫秒数转换为秒数。
  *
  * @return 秒数
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.toSeconds(): Long = TimeUnit.MILLISECONDS.toSeconds(this)
 
@@ -170,6 +204,8 @@ fun Long.toSeconds(): Long = TimeUnit.MILLISECONDS.toSeconds(this)
  * 将毫秒数转换为分钟数。
  *
  * @return 分钟数
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.toMinutes(): Long = TimeUnit.MILLISECONDS.toMinutes(this)
 
@@ -177,6 +213,8 @@ fun Long.toMinutes(): Long = TimeUnit.MILLISECONDS.toMinutes(this)
  * 将毫秒数转换为小时数。
  *
  * @return 小时数
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.toHours(): Long = TimeUnit.MILLISECONDS.toHours(this)
 
@@ -184,6 +222,8 @@ fun Long.toHours(): Long = TimeUnit.MILLISECONDS.toHours(this)
  * 将毫秒数转换为天数。
  *
  * @return 天数
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.toDays(): Long = TimeUnit.MILLISECONDS.toDays(this)
 
@@ -198,6 +238,8 @@ fun Long.toDays(): Long = TimeUnit.MILLISECONDS.toDays(this)
  * ```
  *
  * @return Unix 时间戳（毫秒）
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.fromNow(): Long = System.currentTimeMillis() + this
 
@@ -210,5 +252,7 @@ fun Long.fromNow(): Long = System.currentTimeMillis() + this
  * ```
  *
  * @return Unix 时间戳（毫秒）
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun Long.ago(): Long = System.currentTimeMillis() - this

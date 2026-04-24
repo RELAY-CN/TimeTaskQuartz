@@ -30,9 +30,10 @@ import kim.der.timetask.task.TimeTaskManage
  *
  * @property manager 任务管理器实例
  * @property name 任务名称
- * @param group 任务组名，默认为 "default"
- * @param description 任务描述，默认为空
+ * @property group 任务组名，默认为 "default"
+ * @property description 任务描述，默认为空
  * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  * @since 1.0.0
  */
 class TaskBuilder(
@@ -239,6 +240,8 @@ class TaskBuilder(
  *
  * @param name 任务名称
  * @param block DSL 配置块
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.task(name: String, block: TaskBuilder.() -> Unit) {
     TaskBuilder(this, name).apply(block).build()
@@ -252,6 +255,8 @@ fun TimeTaskManage.task(name: String, block: TaskBuilder.() -> Unit) {
  * @param group 任务组名，默认为 "default"
  * @param description 任务描述
  * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.delayTask(
     name: String,
@@ -277,6 +282,8 @@ fun TimeTaskManage.delayTask(
  * @param delayMillis 首次执行延迟（毫秒），默认为 0
  * @param description 任务描述
  * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.intervalTask(
     name: String,
@@ -303,6 +310,8 @@ fun TimeTaskManage.intervalTask(
  * @param group 任务组名，默认为 "default"
  * @param description 任务描述
  * @param action 要执行的操作
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
  */
 fun TimeTaskManage.cronTask(
     name: String,

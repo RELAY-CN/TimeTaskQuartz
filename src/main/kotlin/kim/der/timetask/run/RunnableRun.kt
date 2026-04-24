@@ -24,9 +24,10 @@ import org.quartz.JobExecutionException
  * 如果任务执行过程中抛出异常，会被包装为 [JobExecutionException] 重新抛出，
  * 以便 Quartz 调度器能够正确处理。
  *
- * @author Dr (dr@der.kim)
- * @since 1.0.0
  * @see org.quartz.Job
+ * @author Dr (dr@der.kim)
+ * @date 2025-11-21
+ * @since 1.0.0
  */
 class RunnableRun : Job {
 
