@@ -45,9 +45,12 @@ class RunnableRun : Job {
      *
      * @param context Quartz 提供的任务执行上下文
      * @throws JobExecutionException 如果任务执行失败或找不到执行函数
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     @Throws(JobExecutionException::class)
     override fun execute(context: JobExecutionContext) {
+        // mergedJobDataMap 会合并 JobDetail 与 Trigger 注入的数据，这里读取 buildTrigger 写入的 run 回调。
         val action = context.mergedJobDataMap[RUN_DATA_KEY]
 
         if (action == null) {

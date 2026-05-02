@@ -180,6 +180,10 @@ object CronExpressions {
 object CronBuilder {
     /**
      * 星期几枚举，用于 [weeklyAt] 方法。
+     *
+     * @property cronValue Quartz 使用的星期缩写
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     enum class DayOfWeek(internal val cronValue: String) {
         SUNDAY("SUN"),
@@ -197,6 +201,8 @@ object CronBuilder {
      * @param seconds 间隔秒数，范围 [1, 59]
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果 seconds 超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun everySeconds(seconds: Int): String {
         require(seconds in 1..59) { "Seconds must be between 1 and 59, got: $seconds" }
@@ -209,6 +215,8 @@ object CronBuilder {
      * @param minutes 间隔分钟数，范围 [1, 59]
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果 minutes 超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun everyMinutes(minutes: Int): String {
         require(minutes in 1..59) { "Minutes must be between 1 and 59, got: $minutes" }
@@ -221,6 +229,8 @@ object CronBuilder {
      * @param hours 间隔小时数，范围 [1, 23]
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果 hours 超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun everyHours(hours: Int): String {
         require(hours in 1..23) { "Hours must be between 1 and 23, got: $hours" }
@@ -235,6 +245,8 @@ object CronBuilder {
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun dailyAt(hour: Int, minute: Int = 0, second: Int = 0): String {
         validateTime(hour, minute, second)
@@ -250,6 +262,8 @@ object CronBuilder {
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun weeklyAt(dayOfWeek: DayOfWeek, hour: Int, minute: Int = 0, second: Int = 0): String {
         validateTime(hour, minute, second)
@@ -265,10 +279,13 @@ object CronBuilder {
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun weeklyAt(dayOfWeek: Int, hour: Int, minute: Int = 0, second: Int = 0): String {
         require(dayOfWeek in 1..7) { "Day of week must be between 1 (Sunday) and 7 (Saturday), got: $dayOfWeek" }
         validateTime(hour, minute, second)
+        // 下标 1..7 直接对齐 Quartz 的 SUN..SAT 语义，0 位仅用于占位。
         val dayNames = arrayOf("", "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
         return "$second $minute $hour ? * ${dayNames[dayOfWeek]}"
     }
@@ -282,6 +299,8 @@ object CronBuilder {
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun monthlyAt(dayOfMonth: Int, hour: Int, minute: Int = 0, second: Int = 0): String {
         require(dayOfMonth in 1..31) { "Day of month must be between 1 and 31, got: $dayOfMonth" }
@@ -297,6 +316,8 @@ object CronBuilder {
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun monthlyLastDay(hour: Int, minute: Int = 0, second: Int = 0): String {
         validateTime(hour, minute, second)
@@ -313,6 +334,8 @@ object CronBuilder {
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
      * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun yearlyAt(month: Int, dayOfMonth: Int, hour: Int, minute: Int = 0, second: Int = 0): String {
         require(month in 1..12) { "Month must be between 1 and 12, got: $month" }
@@ -328,6 +351,9 @@ object CronBuilder {
      * @param minute 分钟，范围 [0, 59]，默认为 0
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
+     * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun weekdaysAt(hour: Int, minute: Int = 0, second: Int = 0): String {
         validateTime(hour, minute, second)
@@ -341,6 +367,9 @@ object CronBuilder {
      * @param minute 分钟，范围 [0, 59]，默认为 0
      * @param second 秒，范围 [0, 59]，默认为 0
      * @return Cron 表达式
+     * @throws IllegalArgumentException 如果参数超出范围
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun weekendsAt(hour: Int, minute: Int = 0, second: Int = 0): String {
         validateTime(hour, minute, second)

@@ -59,6 +59,8 @@ class TaskBuilder(
      *
      * @param group 组名
      * @return 当前构建器实例，支持链式调用
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun group(group: String): TaskBuilder {
         this.group = group
@@ -70,6 +72,8 @@ class TaskBuilder(
      *
      * @param desc 描述文本
      * @return 当前构建器实例，支持链式调用
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun description(desc: String): TaskBuilder {
         this.description = desc
@@ -84,6 +88,8 @@ class TaskBuilder(
      * @param millis 延迟毫秒数
      * @return 当前构建器实例，支持链式调用
      * @throws IllegalArgumentException 如果 millis < 0
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun delay(millis: Long): TaskBuilder {
         require(millis >= 0) { "Delay must be non-negative, got: $millis" }
@@ -97,6 +103,8 @@ class TaskBuilder(
      *
      * @param timestamp Unix 时间戳（毫秒）
      * @return 当前构建器实例，支持链式调用
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun startAt(timestamp: Long): TaskBuilder {
         this.startTime = timestamp
@@ -108,6 +116,9 @@ class TaskBuilder(
      *
      * @param delayMillis 延迟毫秒数
      * @return 当前构建器实例，支持链式调用
+     * @throws IllegalArgumentException 如果 [delayMillis] 小于 `0`
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun startAfter(delayMillis: Long): TaskBuilder {
         require(delayMillis >= 0) { "Delay must be non-negative" }
@@ -121,6 +132,8 @@ class TaskBuilder(
      * @param millis 间隔毫秒数，必须大于 0
      * @return 当前构建器实例，支持链式调用
      * @throws IllegalArgumentException 如果 millis <= 0
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun interval(millis: Long): TaskBuilder {
         require(millis > 0) { "Interval must be positive, got: $millis" }
@@ -131,12 +144,16 @@ class TaskBuilder(
     /**
      * 设置重复次数。
      *
-     * 仅对间隔任务有效。设置后任务将执行指定次数后自动停止。
+     * 当前实现仅记录 DSL 侧配置，不会把 [count] 下传到 [TimeTaskManage]，
+     * 因此不会实际限制任务执行次数；该字段保留给后续扩展使用。
      *
      * @param count 重复次数，-1 表示无限重复
      * @return 当前构建器实例，支持链式调用
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun repeatCount(count: Int): TaskBuilder {
+        // 仅缓存 DSL 配置；当前构建流程不会消费该值，保持历史 no-op 行为。
         this.repeatCount = count
         return this
     }
@@ -147,6 +164,8 @@ class TaskBuilder(
      * @param expression Cron 表达式
      * @return 当前构建器实例，支持链式调用
      * @see <a href="http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html">Cron Trigger Tutorial</a>
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun cron(expression: String): TaskBuilder {
         this.cronExpression = expression
@@ -158,6 +177,8 @@ class TaskBuilder(
      *
      * @param block 执行的代码块
      * @return 当前构建器实例，支持链式调用
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     fun action(block: () -> Unit): TaskBuilder {
         this.action = block
@@ -173,9 +194,13 @@ class TaskBuilder(
      * 3. 如果设置了 [interval]，创建间隔任务
      * 4. 否则创建立即执行一次的任务
      *
-     * @throws IllegalStateException 如果未设置 action
+     * 若未设置 [action]，当前实现会直接跳过注册，不会抛出异常。
+     *
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
      */
     internal fun build() {
+        // 未配置 action 时保持 no-op，避免仅声明 DSL 配置就改变历史行为。
         val runnable = action ?: return
 
         when {
@@ -211,7 +236,7 @@ class TaskBuilder(
             }
 
             else -> {
-                // 默认立即执行一次
+                // 既没有倒计时/Cron/间隔配置时，保持历史行为：退化为“几乎立即执行一次”。
                 manager.addCountdown(
                     name = name,
                     group = group,
