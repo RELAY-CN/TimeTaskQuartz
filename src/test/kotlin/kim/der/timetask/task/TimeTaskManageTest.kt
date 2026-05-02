@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * TimeTaskManage 的测试类
@@ -409,6 +410,45 @@ class TimeTaskManageTest {
         assertTrue(taskManager.isRunning)
         taskManager.shutdownNow()
         assertFalse(taskManager.isRunning)
+    }
+
+    @Test
+    fun testShutdownNowReturnsWithoutWaitingForRunningJobToFinish() {
+        val started = CountDownLatch(1)
+        val allowFinish = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val elapsedMillis = AtomicLong(-1)
+        val shutdownReturned = CountDownLatch(1)
+
+        taskManager.addCountdown(
+            name = "blockingShutdown",
+            group = "test",
+            description = "阻塞中的任务",
+            startTime = System.currentTimeMillis() - 1000,
+        ) {
+            started.countDown()
+            allowFinish.await(5, TimeUnit.SECONDS)
+            finished.countDown()
+        }
+
+        assertTrue(started.await(3, TimeUnit.SECONDS))
+
+        val shutdownThread =
+            Thread.ofPlatform().start {
+                val start = System.nanoTime()
+                taskManager.shutdownNow()
+                elapsedMillis.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+                shutdownReturned.countDown()
+            }
+
+        try {
+            assertTrue(shutdownReturned.await(1, TimeUnit.SECONDS))
+            assertTrue(elapsedMillis.get() in 0..999)
+        } finally {
+            allowFinish.countDown()
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            shutdownThread.join(5_000)
+        }
     }
 
     @Test

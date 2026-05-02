@@ -147,14 +147,14 @@ class TimeTaskManage {
     /**
      * 立即关闭任务调度器。
      *
-     * 此方法会等待当前正在执行的任务完成后再关闭。
+     * 此方法不会等待当前正在执行的任务完成后再返回。
      * 关闭后，此管理器实例不可再使用。
      *
      * @see shutdown
      */
     fun shutdownNow() {
         if (!scheduler.isShutdown) {
-            scheduler.shutdown(true)
+            scheduler.shutdown(false)
         }
     }
 
