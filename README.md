@@ -18,9 +18,17 @@
 
 ```kotlin
 // build.gradle.kts
-// 注 当前版本号为哈希(Short)
+// 当前发布版本号使用 Git short hash，例如 90845eb
 dependencies {
     implementation("kim.der:TimeTaskQuartz:版本号")
+}
+```
+
+TimeTaskQuartz 传递依赖 Quartz 与 `slf4j-api`。应用侧如果需要日志输出，请自行接入一个 SLF4J 实现，例如 Logback：
+
+```kotlin
+dependencies {
+    implementation("ch.qos.logback:logback-classic:版本号")
 }
 ```
 
@@ -77,7 +85,7 @@ if (taskManager.contains("myTimedTask", "default")) {
     taskManager.pause("myTimedTask", "default")
     
     // 恢复任务
-    taskManager.unPause("myTimedTask", "default")
+    taskManager.resume("myTimedTask", "default")
     
     // 立即触发一次
     taskManager.triggerNow("myTimedTask", "default")
@@ -145,6 +153,7 @@ taskManager.task("chained") {
         .description("链式调用")
         .startAfter(5.seconds)
         .interval(30.seconds)
+        .repeatCount(2) // 首次执行后再重复 2 次，总共执行 3 次；-1 表示无限重复
         .action { println("chained task") }
 }
 
@@ -207,6 +216,7 @@ val allJobInfo = taskManager.getAllJobInfo()
 |-----|------|
 | `addCountdown(name, group, description, startTime, runnable)` | 添加一次性倒计时任务，执行后自动删除 |
 | `addTimedTask(name, group, description, startTime, intervalTime, runnable)` | 添加固定间隔的定时任务 |
+| `addTimedTask(name, group, description, startTime, intervalTime, repeatCount, runnable)` | 添加固定次数的间隔任务；`repeatCount` 不包含首次执行 |
 | `addTimedTask(name, group, description, cron, runnable, timeZone?)` | 添加 Cron 表达式的定时任务 |
 
 #### 任务管理
@@ -215,7 +225,8 @@ val allJobInfo = taskManager.getAllJobInfo()
 |-----|-------|------|
 | `contains(name, group)` | `Boolean` | 检查任务是否存在 |
 | `pause(name, group)` | `Boolean` | 暂停任务 |
-| `unPause(name, group)` | `Boolean` | 恢复暂停的任务 |
+| `resume(name, group)` | `Boolean` | 恢复暂停的任务 |
+| `unPause(name, group)` | `Boolean` | 兼容旧 API，已弃用，请使用 `resume` |
 | `remove(name, group)` | `Boolean` | 删除任务 |
 | `triggerNow(name, group)` | `Boolean` | 立即触发一次任务 |
 | `reschedule(name, group, newIntervalMillis)` | `Boolean` | 更新任务执行间隔 |
@@ -284,6 +295,7 @@ val allJobInfo = taskManager.getAllJobInfo()
 | `getNextFireTime(name, group?)` | `Long?` | 下次执行时间 |
 | `getPreviousFireTime(name, group?)` | `Long?` | 上次执行时间 |
 | `getDescription(name, group?)` | `String?` | 任务描述 |
+| `getExecutionCount(name, group?)` | `Int?` | 已弃用：Quartz 不会自动维护该值，建议在任务 action 中自行统计 |
 | `getJobInfo(name, group?)` | `JobInfo?` | 任务详细信息 |
 | `getAllJobInfo()` | `List<JobInfo>` | 所有任务信息 |
 
@@ -358,6 +370,7 @@ taskManager.task("name") {
     startAt(timestamp)     // 指定开始时间
     startAfter(5000)       // 延迟开始
     interval(60000)        // 执行间隔（间隔任务）
+    repeatCount(2)         // 可选；首次执行后再重复 2 次，总共执行 3 次；-1 表示无限重复
     // 或
     cron("0 0 12 * * ?")   // Cron 表达式（Cron 任务）
     action { ... }         // 执行的操作
@@ -392,13 +405,16 @@ cronTask(name, cron, group?, description?) { ... }
 
 #### 优化
 - 所有方法添加完整 KDoc 文档
-- `pause()`、`unPause()`、`remove()` 等方法现在返回操作结果
+- `pause()`、`resume()`、`remove()` 等任务管理方法返回操作结果
+- `unPause()` 作为旧 API 保留兼容并标记为弃用，新增标准命名 `resume()`
+- `getExecutionCount()` 标记为弃用，避免误导为 Quartz 自动计数
 - 优化异常处理，添加参数验证
 - RunnableRun 添加详细异常信息
 
-#### 破坏性变更
+#### 兼容性说明
 - `pause(JobKey)` 返回类型从 `Unit` 改为 `Boolean`
-- `unPause(JobKey)` 改为 `public` 可见性
+- 旧版 `unPause()` API 仍可调用，建议新接入统一使用 `resume()`
+- `repeatCount()` 和 `addTimedTask(..., repeatCount, ...)` 仅对固定间隔任务生效；`repeatCount(2)` 表示首次执行后再重复 2 次
 
 ## 构建
 

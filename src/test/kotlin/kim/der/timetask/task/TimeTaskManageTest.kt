@@ -170,6 +170,26 @@ class TimeTaskManageTest {
     }
 
     @Test
+    fun testPublicAddTimedTaskIntervalOverloadRemainsAvailable() {
+        val latch = CountDownLatch(1)
+
+        taskManager.addTimedTask(
+            name = "publicInterval",
+            group = "test",
+            description = "公开间隔 API",
+            startTime = System.currentTimeMillis(),
+            intervalTime = 100,
+            runnable = Runnable {
+                latch.countDown()
+            },
+        )
+
+        assertTrue(taskManager.contains("publicInterval", "test"))
+        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        taskManager.remove("publicInterval", "test")
+    }
+
+    @Test
     fun testAddTimedTaskWithZeroIntervalThrowsException() {
         assertThrows<IllegalArgumentException> {
             taskManager.addTimedTask(
@@ -234,6 +254,7 @@ class TimeTaskManageTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun testPauseAndUnPauseWorkCorrectly() {
         val counter = AtomicInteger(0)
         val latch = CountDownLatch(1)
@@ -264,11 +285,31 @@ class TimeTaskManageTest {
     }
 
     @Test
+    fun testResumeAliasWorksCorrectly() {
+        taskManager.addTimedTask(
+            name = "resumeAliasTest",
+            group = "test",
+            description = "恢复别名测试",
+            startTime = System.currentTimeMillis() + 10_000,
+            intervalTime = 1000,
+        ) {}
+
+        assertTrue(taskManager.pause("resumeAliasTest", "test"))
+        assertEquals(JobState.PAUSED, taskManager.getJobState("resumeAliasTest", "test"))
+
+        assertTrue(taskManager.resume("resumeAliasTest", "test"))
+        assertEquals(JobState.NORMAL, taskManager.getJobState("resumeAliasTest", "test"))
+
+        taskManager.remove("resumeAliasTest", "test")
+    }
+
+    @Test
     fun testPauseNonexistentTaskReturnsFalse() {
         assertFalse(taskManager.pause("nonexistent", "test"))
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun testUnPauseNonexistentTaskReturnsFalse() {
         assertFalse(taskManager.unPause("nonexistent", "test"))
     }
