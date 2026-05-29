@@ -200,20 +200,6 @@ fun TimeTaskManage.pause(name: String): Boolean = pause(name, DEFAULT_GROUP)
 fun TimeTaskManage.resume(name: String): Boolean = resume(name, DEFAULT_GROUP)
 
 /**
- * 恢复任务（使用默认组）。
- *
- * @param name 任务名称
- * @return 如果恢复成功返回 `true`
- * @author Dr (dr@der.kim)
- * @date 2025-11-21
- */
-@Deprecated(
-    message = "Use resume(name) instead.",
-    replaceWith = ReplaceWith("resume(name)"),
-)
-fun TimeTaskManage.unPause(name: String): Boolean = resume(name)
-
-/**
  * 删除任务（使用默认组）。
  *
  * @param name 任务名称
@@ -438,30 +424,6 @@ fun TimeTaskManage.getDescription(name: String, group: String = DEFAULT_GROUP): 
     return try {
         val triggers = scheduler.getTriggersOfJob(JobKey(name, group))
         triggers.firstOrNull()?.description
-    } catch (_: Exception) {
-        null
-    }
-}
-
-/**
- * 获取任务的执行次数（需要 Quartz 支持）。
- *
- * 注意：此方法依赖于 JobDataMap 中的 executionCount 字段，
- * 默认情况下 Quartz 不会自动维护此字段。
- *
- * @param name 任务名称
- * @param group 任务组名，默认为 [DEFAULT_GROUP]
- * @return 执行次数，如果不可用返回 `null`
- * @author Dr (dr@der.kim)
- * @date 2025-11-21
- */
-@Deprecated(
-    message = "Quartz does not maintain executionCount for these jobs. Track counts in the task action or use listener integration.",
-)
-fun TimeTaskManage.getExecutionCount(name: String, group: String = DEFAULT_GROUP): Int? {
-    return try {
-        val jobDetail = scheduler.getJobDetail(JobKey(name, group))
-        jobDetail?.jobDataMap?.get("executionCount") as? Int
     } catch (_: Exception) {
         null
     }

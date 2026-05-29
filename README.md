@@ -226,7 +226,6 @@ val allJobInfo = taskManager.getAllJobInfo()
 | `contains(name, group)` | `Boolean` | 检查任务是否存在 |
 | `pause(name, group)` | `Boolean` | 暂停任务 |
 | `resume(name, group)` | `Boolean` | 恢复暂停的任务 |
-| `unPause(name, group)` | `Boolean` | 兼容旧 API，已弃用，请使用 `resume` |
 | `remove(name, group)` | `Boolean` | 删除任务 |
 | `triggerNow(name, group)` | `Boolean` | 立即触发一次任务 |
 | `reschedule(name, group, newIntervalMillis)` | `Boolean` | 更新任务执行间隔 |
@@ -295,7 +294,6 @@ val allJobInfo = taskManager.getAllJobInfo()
 | `getNextFireTime(name, group?)` | `Long?` | 下次执行时间 |
 | `getPreviousFireTime(name, group?)` | `Long?` | 上次执行时间 |
 | `getDescription(name, group?)` | `String?` | 任务描述 |
-| `getExecutionCount(name, group?)` | `Int?` | 已弃用：Quartz 不会自动维护该值，建议在任务 action 中自行统计 |
 | `getJobInfo(name, group?)` | `JobInfo?` | 任务详细信息 |
 | `getAllJobInfo()` | `List<JobInfo>` | 所有任务信息 |
 
@@ -406,14 +404,15 @@ cronTask(name, cron, group?, description?) { ... }
 #### 优化
 - 所有方法添加完整 KDoc 文档
 - `pause()`、`resume()`、`remove()` 等任务管理方法返回操作结果
-- `unPause()` 作为旧 API 保留兼容并标记为弃用，新增标准命名 `resume()`
-- `getExecutionCount()` 标记为弃用，避免误导为 Quartz 自动计数
+- 移除旧命名 `unPause()`，统一使用标准命名 `resume()`
+- 移除不可靠的 `getExecutionCount()`，执行次数请在任务 action 或监听器中自行统计
 - 优化异常处理，添加参数验证
 - RunnableRun 添加详细异常信息
 
-#### 兼容性说明
+#### 破坏性变更
 - `pause(JobKey)` 返回类型从 `Unit` 改为 `Boolean`
-- 旧版 `unPause()` API 仍可调用，建议新接入统一使用 `resume()`
+- `unPause()` 已移除，请迁移到 `resume()`
+- `getExecutionCount()` 已移除，避免暴露 Quartz 默认不维护的伪计数字段
 - `repeatCount()` 和 `addTimedTask(..., repeatCount, ...)` 仅对固定间隔任务生效；`repeatCount(2)` 表示首次执行后再重复 2 次
 
 ## 构建

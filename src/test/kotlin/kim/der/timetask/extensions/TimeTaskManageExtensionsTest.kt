@@ -155,18 +155,6 @@ class TimeTaskManageExtensionsTest {
     }
 
     @Test
-    @Suppress("DEPRECATION")
-    fun testUnPauseWithSingleNameRemainsCompatible() {
-        taskManager.every("unPauseCompatTest", 100) {}
-        taskManager.pause("unPauseCompatTest")
-
-        assertTrue(taskManager.unPause("unPauseCompatTest"))
-        assertEquals(JobState.NORMAL, taskManager.getState("unPauseCompatTest"))
-
-        taskManager.remove("unPauseCompatTest")
-    }
-
-    @Test
     fun testRemoveWithSingleNameUsesDefaultGroup() {
         taskManager.delay("removeTest", 10000) {}
 

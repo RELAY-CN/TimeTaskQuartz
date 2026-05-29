@@ -542,35 +542,6 @@ class TimeTaskManage {
     fun resume(name: String, group: String): Boolean = resume(JobKey(name, group))
 
     /**
-     * 恢复已暂停的任务。
-     *
-     * @param jobKey 任务的 [JobKey]
-     * @return 如果恢复成功返回 `true`；任务不存在或 Quartz 恢复失败时返回 `false`
-     * @author Dr (dr@der.kim)
-     * @date 2025-11-21
-     */
-    @Deprecated(
-        message = "Use resume(jobKey) instead.",
-        replaceWith = ReplaceWith("resume(jobKey)"),
-    )
-    fun unPause(jobKey: JobKey): Boolean = resume(jobKey)
-
-    /**
-     * 恢复已暂停的任务。
-     *
-     * @param name 任务名称
-     * @param group 任务组名
-     * @return 如果恢复成功返回 `true`；任务不存在或 Quartz 恢复失败时返回 `false`
-     * @author Dr (dr@der.kim)
-     * @date 2025-11-21
-     */
-    @Deprecated(
-        message = "Use resume(name, group) instead.",
-        replaceWith = ReplaceWith("resume(name, group)"),
-    )
-    fun unPause(name: String, group: String): Boolean = resume(name, group)
-
-    /**
      * 删除指定任务。
      *
      * 删除后任务将不再执行，且无法恢复。

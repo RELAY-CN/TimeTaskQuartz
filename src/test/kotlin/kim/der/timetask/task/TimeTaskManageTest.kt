@@ -254,8 +254,7 @@ class TimeTaskManageTest {
     }
 
     @Test
-    @Suppress("DEPRECATION")
-    fun testPauseAndUnPauseWorkCorrectly() {
+    fun testPauseAndResumeWorkCorrectly() {
         val counter = AtomicInteger(0)
         val latch = CountDownLatch(1)
 
@@ -277,7 +276,7 @@ class TimeTaskManageTest {
         Thread.sleep(300)
         assertEquals(countBeforePause, counter.get())
 
-        assertTrue(taskManager.unPause("pauseTest", "test"))
+        assertTrue(taskManager.resume("pauseTest", "test"))
         Thread.sleep(300)
         assertTrue(counter.get() > countBeforePause)
 
@@ -309,9 +308,8 @@ class TimeTaskManageTest {
     }
 
     @Test
-    @Suppress("DEPRECATION")
-    fun testUnPauseNonexistentTaskReturnsFalse() {
-        assertFalse(taskManager.unPause("nonexistent", "test"))
+    fun testResumeNonexistentTaskReturnsFalse() {
+        assertFalse(taskManager.resume("nonexistent", "test"))
     }
 
     @Test
