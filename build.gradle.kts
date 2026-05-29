@@ -9,7 +9,6 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.kotlin.dsl.withType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
@@ -41,14 +40,13 @@ dependencies {
         exclude("com.mchange", "c3p0")
         exclude("com.mchange", "mchange-commons-java")
         exclude("com.zaxxer", "HikariCP-java7")
-        exclude("org.slf4j", "slf4j-api")
     }
-    implementation("org.slf4j:slf4j-nop:2.0.13")
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
     testImplementation("org.mockito:mockito-core:5.18.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testRuntimeOnly("org.slf4j:slf4j-nop:2.0.13")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -62,6 +60,30 @@ java {
     withSourcesJar()
 }
 
+val generatedGitHashResourcesDir = layout.buildDirectory.dir("generated/resources/gitCommitHash")
+
+val generateGitCommitHashResource by tasks.registering {
+    val gitHash = providers.provider { getGitCommitHash() }
+    val outputFile = generatedGitHashResourcesDir.map {
+        it.file("gradleRes/${project.name}/GitCommitHash.txt")
+    }
+
+    inputs.property("gitCommitHash", gitHash)
+    outputs.file(outputFile)
+
+    doLast {
+        val file = outputFile.get().asFile
+        file.parentFile.mkdirs()
+        file.writeText(gitHash.get())
+    }
+}
+
+sourceSets {
+    main {
+        resources.setSrcDirs(emptyList<Any>())
+    }
+}
+
 tasks.withType<JavaCompile> {
     // 使用Java11做标准语法并编译
     sourceCompatibility = JvmTarget.JVM_11.target
@@ -70,10 +92,12 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
 
-tasks.jar {
-    doLast {
-        makeGitCommitHashFile()
+tasks.processResources {
+    dependsOn(generateGitCommitHashResource)
+    from("src/main/resources") {
+        exclude("gradleRes/${project.name}/GitCommitHash.txt")
     }
+    from(generatedGitHashResourcesDir)
 }
 
 tasks.test {
@@ -149,43 +173,6 @@ fun getGitCommitHash(): String =
     } catch (_: Exception) {
         "unknown"
     }
-
-fun Project.makeGitCommitHashFile() {
-    try {
-        val gitHashFile = File("$rootDir/src/main/resources/gradleRes/$name/GitCommitHash.txt")
-        gitHashFile.fuckGithub()
-        gitHashFile.writeText(getGitCommitHash())
-    } catch (_: Exception) {
-        // 忽略
-    }
-}
-
-fun File.fuckGithub() {
-    try {
-        if (this.parentFile == null || this.parentFile!!.delete()) {
-            return
-        }
-        this.parentFile?.mkdirs()
-
-        if (this.isDirectory) {
-            return
-        }
-
-        if (!this.exists()) {
-            try {
-                Files.createFile(toPath())
-            } catch (e: IOException) {
-                println(path)
-                println(canWrite())
-                error(e)
-            }
-        } else {
-            this.delete()
-        }
-    } catch (_: Exception) {
-        println("remove Files Error???")
-    }
-}
 
 /*
  * GraalVM Native Image Support

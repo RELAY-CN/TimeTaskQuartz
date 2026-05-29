@@ -253,9 +253,12 @@ class TimeTaskManage {
                 key = key,
                 description = description,
                 action = {
-                    runnable.run()
-                    // 倒计时任务只执行一次；回调结束后手动拆掉 durable Job 与 trigger。
-                    remove(key)
+                    try {
+                        runnable.run()
+                    } finally {
+                        // 倒计时任务只执行一次；即使回调抛异常，也要拆掉 durable Job 与 trigger。
+                        remove(key)
+                    }
                 },
             ) { startAt(Date(startTime)) }
 

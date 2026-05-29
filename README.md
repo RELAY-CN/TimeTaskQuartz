@@ -227,7 +227,7 @@ val allJobInfo = taskManager.getAllJobInfo()
 | 方法 | 说明 |
 |-----|------|
 | `shutdown(waitForJobsToComplete)` | 关闭调度器 |
-| `shutdownNow()` | 立即关闭调度器（等待当前任务完成） |
+| `shutdownNow()` | 立即关闭调度器（不等待当前任务完成） |
 | `standby()` | 将调度器置于待机模式 |
 | `resume()` | 从待机模式恢复 |
 

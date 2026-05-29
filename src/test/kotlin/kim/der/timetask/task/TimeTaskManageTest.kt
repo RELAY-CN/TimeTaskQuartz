@@ -122,6 +122,28 @@ class TimeTaskManageTest {
         assertTrue(latch.await(3, TimeUnit.SECONDS))
     }
 
+    @Test
+    fun testAddCountdownRemovesTaskWhenActionThrows() {
+        val latch = CountDownLatch(1)
+
+        taskManager.addCountdown(
+            name = "throwingCountdown",
+            group = "test",
+            description = "异常倒计时",
+            startTime = System.currentTimeMillis() - 1000,
+        ) {
+            latch.countDown()
+            throw RuntimeException("boom")
+        }
+
+        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        assertTrue(
+            waitUntil(timeoutMillis = 2_000) {
+                !taskManager.contains("throwingCountdown", "test")
+            }
+        )
+    }
+
     // ==================== 间隔任务测试 ====================
 
     @Test
@@ -456,5 +478,17 @@ class TimeTaskManageTest {
         taskManager.shutdownNow()
         taskManager.shutdownNow()
         assertFalse(taskManager.isRunning)
+    }
+
+    private fun waitUntil(
+        timeoutMillis: Long,
+        condition: () -> Boolean,
+    ): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        while (System.nanoTime() < deadline) {
+            if (condition()) return true
+            Thread.sleep(25)
+        }
+        return condition()
     }
 }
