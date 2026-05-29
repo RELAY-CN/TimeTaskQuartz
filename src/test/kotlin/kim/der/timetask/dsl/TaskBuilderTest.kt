@@ -177,6 +177,40 @@ class TaskBuilderTest {
         }
     }
 
+    @Test
+    fun testIntervalWithRepeatCountStopsAfterConfiguredRepeats() {
+        val latch = CountDownLatch(3)
+        val counter = AtomicInteger(0)
+
+        taskManager.task("repeatCountTask") {
+            interval(100)
+            repeatCount(2)
+            action {
+                counter.incrementAndGet()
+                latch.countDown()
+            }
+        }
+
+        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        assertTrue(
+            waitUntil(timeoutMillis = 2_000) {
+                !taskManager.contains("repeatCountTask", "default")
+            }
+        )
+        assertEquals(3, counter.get())
+    }
+
+    @Test
+    fun testRepeatCountWithInvalidValueThrowsException() {
+        assertThrows<IllegalArgumentException> {
+            taskManager.task("invalidRepeatCount") {
+                interval(100)
+                repeatCount(-2)
+                action { }
+            }
+        }
+    }
+
     // ==================== Cron 任务测试 ====================
 
     @Test
@@ -331,5 +365,17 @@ class TaskBuilderTest {
         }
 
         assertTrue(latch.await(5, TimeUnit.SECONDS))
+    }
+
+    private fun waitUntil(
+        timeoutMillis: Long,
+        condition: () -> Boolean,
+    ): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        while (System.nanoTime() < deadline) {
+            if (condition()) return true
+            Thread.sleep(25)
+        }
+        return condition()
     }
 }

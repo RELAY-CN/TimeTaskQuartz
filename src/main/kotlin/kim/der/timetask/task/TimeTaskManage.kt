@@ -290,15 +290,52 @@ class TimeTaskManage {
      * @author Dr (dr@der.kim)
      * @date 2025-11-21
      */
-    fun addTimedTask(
+    internal fun addTimedTask(
         name: String,
         group: String,
         description: String,
         startTime: Long,
         intervalTime: Long,
         runnable: Runnable,
+    ) = addTimedTask(
+        name = name,
+        group = group,
+        description = description,
+        startTime = startTime,
+        intervalTime = intervalTime,
+        repeatCount = SimpleTrigger.REPEAT_INDEFINITELY,
+        runnable = runnable,
+    )
+
+    /**
+     * 创建一个固定间隔的定时任务。
+     *
+     * @param name 任务名称，在同一组内必须唯一
+     * @param group 任务组名
+     * @param description 任务描述
+     * @param startTime 首次执行时间（Unix 时间戳，毫秒）
+     * @param intervalTime 执行间隔（毫秒），必须大于 0
+     * @param repeatCount 重复次数，`-1` 表示无限重复；Quartz 不把首次执行计入重复次数
+     * @param runnable 要执行的操作
+     * @throws IllegalArgumentException 如果 intervalTime <= 0 或 repeatCount < -1
+     * @throws SchedulerException 如果任务添加失败
+     *
+     * @author Dr (dr@der.kim)
+     * @date 2025-11-21
+     */
+    fun addTimedTask(
+        name: String,
+        group: String,
+        description: String,
+        startTime: Long,
+        intervalTime: Long,
+        repeatCount: Int,
+        runnable: Runnable,
     ) {
         require(intervalTime > 0) { "Interval time must be positive, got: $intervalTime" }
+        require(repeatCount >= SimpleTrigger.REPEAT_INDEFINITELY) {
+            "Repeat count must be -1 or non-negative, got: $repeatCount"
+        }
 
         val key = JobKey(name, group)
         val trigger =
@@ -311,13 +348,13 @@ class TimeTaskManage {
                     SimpleScheduleBuilder
                         .simpleSchedule()
                         .withIntervalInMilliseconds(intervalTime)
-                        .repeatForever()
+                        .withRepeatCount(repeatCount)
                         .withMisfireHandlingInstructionNextWithExistingCount(),
                 )
                 startAt(Date(startTime))
             }
 
-        scheduleJob(key, trigger)
+        scheduleJob(key, trigger, storeDurably = repeatCount == SimpleTrigger.REPEAT_INDEFINITELY)
     }
 
     /**
@@ -374,7 +411,7 @@ class TimeTaskManage {
                 )
             }
 
-        scheduleJob(key, trigger)
+        scheduleJob(key, trigger, storeDurably = true)
     }
 
     /**
@@ -652,13 +689,17 @@ class TimeTaskManage {
             .apply(configure)
             .build()
 
-    private fun scheduleJob(key: JobKey, trigger: Trigger) {
+    private fun scheduleJob(
+        key: JobKey,
+        trigger: Trigger,
+        storeDurably: Boolean = true,
+    ) {
         val jobDetail =
             JobBuilder
                 .newJob(RunnableRun::class.java)
                 .withIdentity(key)
                 .requestRecovery(true)
-                .storeDurably(true)
+                .apply { if (storeDurably) storeDurably(true) }
                 .build()
 
         scheduler.scheduleJob(jobDetail, trigger)

@@ -144,8 +144,8 @@ class TaskBuilder(
     /**
      * 设置重复次数。
      *
-     * 当前实现仅记录 DSL 侧配置，不会把 [count] 下传到 [TimeTaskManage]，
-     * 因此不会实际限制任务执行次数；该字段保留给后续扩展使用。
+     * 该配置仅对 [interval] 任务生效。Quartz 的重复次数不包含首次触发：
+     * `repeatCount(2)` 表示首次触发后再重复 2 次，总共执行 3 次。
      *
      * @param count 重复次数，-1 表示无限重复
      * @return 当前构建器实例，支持链式调用
@@ -153,7 +153,7 @@ class TaskBuilder(
      * @date 2025-11-21
      */
     fun repeatCount(count: Int): TaskBuilder {
-        // 仅缓存 DSL 配置；当前构建流程不会消费该值，保持历史 no-op 行为。
+        require(count >= REPEAT_FOREVER) { "Repeat count must be -1 or non-negative, got: $count" }
         this.repeatCount = count
         return this
     }
@@ -231,6 +231,7 @@ class TaskBuilder(
                     description = description.ifEmpty { "定时任务: $name" },
                     startTime = startTime ?: System.currentTimeMillis(),
                     intervalTime = intervalTime!!,
+                    repeatCount = repeatCount,
                     runnable = Runnable(runnable),
                 )
             }
