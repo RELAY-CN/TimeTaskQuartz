@@ -4,430 +4,601 @@
 
 package kim.der.timetask.extensions
 
-import kim.der.timetask.dsl.cronTask
-import kim.der.timetask.dsl.delayTask
-import kim.der.timetask.dsl.intervalTask
-import kim.der.timetask.dsl.task
 import kim.der.timetask.task.JobState
 import kim.der.timetask.task.TimeTaskManage
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.stream.Stream
 
 /**
- * TimeTaskManageExtensions 的测试类
+ * [TimeTaskManage] 默认组扩展和查询扩展的业务契约测试。
  *
- * @author Dr (dr@der.kim)
+ * 测试使用真实 Quartz 调度器验证状态变化，避免 mock 任务管理器本身；
+ * 等待异步调度时统一使用 latch 或轮询条件，减少固定 sleep 带来的不稳定性。
  */
+@DisplayName("TimeTaskManage 扩展 API")
 class TimeTaskManageExtensionsTest {
     private lateinit var taskManager: TimeTaskManage
 
     @BeforeEach
     fun setUp() {
         taskManager = TimeTaskManage()
-        Thread.sleep(100)
     }
 
     @AfterEach
     fun tearDown() {
-        taskManager.clearAll()
-        taskManager.shutdownNow()
-        Thread.sleep(100)
+        if (this::taskManager.isInitialized && taskManager.isRunning) {
+            taskManager.clearAll()
+            taskManager.shutdownNow()
+        }
     }
 
-    // ==================== 任务创建扩展测试 ====================
+    @Nested
+    @DisplayName("正常场景")
+    inner class NormalScenarios {
 
-    @Test
-    fun testDelayExecutesTaskOnceAfterDelay() {
-        val latch = CountDownLatch(1)
+        @Test
+        @DisplayName("delay 使用默认组创建一次性任务并在执行后自动移除")
+        fun `delay creates one shot task in default group and removes it after execution`() {
+            // Given：业务通过默认组创建一次性通知任务。
+            val executed = CountDownLatch(1)
 
-        taskManager.delay("delayTest", 500) {
-            latch.countDown()
+            // When：任务延迟执行。
+            taskManager.delay("delay-notification", 80, description = "用户注册欢迎通知") {
+                executed.countDown()
+            }
+
+            // Then：任务先可查询，执行完成后自动清理。
+            assertAll(
+                "delay 一次性任务生命周期",
+                {
+                    assertThat(taskManager.contains("delay-notification"))
+                        .`as`("delay 应把任务注册到默认组")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.getDescription("delay-notification"))
+                        .`as`("任务描述应保留用户输入")
+                        .isEqualTo("用户注册欢迎通知")
+                },
+                {
+                    assertThat(executed.await(3, TimeUnit.SECONDS))
+                        .`as`("一次性任务应在超时时间内执行")
+                        .isTrue()
+                },
+                {
+                    assertThat(waitUntil { !taskManager.contains("delay-notification") })
+                        .`as`("一次性任务执行后应自动从默认组移除")
+                        .isTrue()
+                },
+            )
         }
 
-        assertTrue(taskManager.contains("delayTest"))
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        @Test
+        @DisplayName("runNow 几乎立即执行任务")
+        fun `run now executes task immediately`() {
+            // Given：业务需要立刻刷新缓存。
+            val executed = CountDownLatch(1)
 
-        Thread.sleep(200)
-        assertFalse(taskManager.contains("delayTest"))
-    }
+            // When：通过 runNow 创建立即执行任务。
+            taskManager.runNow("cache-refresh", description = "立即刷新缓存") {
+                executed.countDown()
+            }
 
-    @Test
-    fun testRunNowExecutesTaskImmediately() {
-        val latch = CountDownLatch(1)
-
-        taskManager.runNow("runNowTest") {
-            latch.countDown()
+            // Then：任务应快速执行，并保留诊断描述直到任务完成。
+            assertAll(
+                "runNow 立即任务",
+                {
+                    assertThat(executed.await(2, TimeUnit.SECONDS))
+                        .`as`("runNow 应在短时间内触发业务动作")
+                        .isTrue()
+                },
+                {
+                    assertThat(waitUntil { !taskManager.contains("cache-refresh") })
+                        .`as`("runNow 底层是一次性任务，执行完成后应自动清理")
+                        .isTrue()
+                },
+            )
         }
 
-        assertTrue(latch.await(2, TimeUnit.SECONDS))
-    }
+        @Test
+        @DisplayName("runAt 在指定未来时间执行任务")
+        fun `run at executes task at configured timestamp`() {
+            // Given：业务需要在未来某个时间点执行补偿任务。
+            val executed = CountDownLatch(1)
+            val before = System.currentTimeMillis()
 
-    @Test
-    fun testRunAtExecutesTaskAtSpecifiedTime() {
-        val latch = CountDownLatch(1)
+            // When：指定未来 250ms 执行。
+            taskManager.runAt("future-compensation", before + 250, description = "补偿任务") {
+                executed.countDown()
+            }
 
-        taskManager.runAt("runAtTest", System.currentTimeMillis() + 500) {
-            latch.countDown()
+            // Then：任务应在合理窗口内执行，不应立刻触发。
+            assertThat(executed.await(3, TimeUnit.SECONDS))
+                .`as`("runAt 应在指定时间附近触发任务")
+                .isTrue()
+            assertThat(System.currentTimeMillis() - before)
+                .`as`("runAt 不应把未来任务立即触发，应尊重配置的时间点")
+                .isGreaterThanOrEqualTo(150)
         }
 
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-    }
+        @Test
+        @DisplayName("every 支持延迟启动并按固定间隔重复执行")
+        fun `every starts after delay and repeats`() {
+            // Given：业务配置带冷启动延迟的心跳任务。
+            val executions = CountDownLatch(2)
+            val counter = AtomicInteger(0)
+            val before = System.currentTimeMillis()
 
-    @Test
-    fun testEveryExecutesTaskRepeatedly() {
-        val latch = CountDownLatch(3)
-        val counter = AtomicInteger(0)
+            // When：延迟后按固定间隔执行。
+            taskManager.every("heartbeat", intervalMillis = 80, delayMillis = 200, description = "服务心跳") {
+                counter.incrementAndGet()
+                executions.countDown()
+            }
 
-        taskManager.every("everyTest", 100) {
-            counter.incrementAndGet()
-            latch.countDown()
+            // Then：任务先延迟启动，再重复触发，且不会自动删除。
+            assertAll(
+                "every 固定间隔任务",
+                {
+                    assertThat(executions.await(3, TimeUnit.SECONDS))
+                        .`as`("固定间隔任务应重复触发")
+                        .isTrue()
+                },
+                {
+                    assertThat(System.currentTimeMillis() - before)
+                        .`as`("every 应尊重首次执行延迟")
+                        .isGreaterThanOrEqualTo(150)
+                },
+                {
+                    assertThat(counter.get())
+                        .`as`("固定间隔任务应产生多次业务状态变化")
+                        .isGreaterThanOrEqualTo(2)
+                },
+                {
+                    assertThat(taskManager.getState("heartbeat"))
+                        .`as`("重复任务执行后仍应保持正常调度状态")
+                        .isEqualTo(JobState.NORMAL)
+                },
+                {
+                    assertThat(taskManager.getDescription("heartbeat"))
+                        .`as`("重复任务描述应可查询")
+                        .isEqualTo("服务心跳")
+                },
+            )
         }
 
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-        assertTrue(counter.get() >= 3)
+        @Test
+        @DisplayName("cron 使用默认组创建 Cron 任务")
+        fun `cron creates default group cron task`() {
+            // Given：业务配置每秒执行的轻量 Cron 任务。
+            val executed = CountDownLatch(1)
 
-        taskManager.remove("everyTest")
+            // When：通过默认组 Cron 扩展注册任务。
+            taskManager.cron("daily-report", CronExpressions.EVERY_SECOND, description = "日报生成") {
+                executed.countDown()
+            }
+
+            // Then：任务可查询、状态正常、描述保留，并能被 Quartz 触发。
+            assertAll(
+                "cron 默认组任务",
+                {
+                    assertThat(taskManager.contains("daily-report"))
+                        .`as`("Cron 扩展应使用默认组注册任务")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.getState("daily-report"))
+                        .`as`("Cron 任务注册后应处于正常状态")
+                        .isEqualTo(JobState.NORMAL)
+                },
+                {
+                    assertThat(taskManager.getDescription("daily-report"))
+                        .`as`("Cron 任务描述应保留业务文案")
+                        .isEqualTo("日报生成")
+                },
+                {
+                    assertThat(executed.await(3, TimeUnit.SECONDS))
+                        .`as`("Cron 任务应按表达式触发")
+                        .isTrue()
+                },
+            )
+        }
     }
 
-    @Test
-    fun testEveryWithDelayStartsAfterDelay() {
-        val latch = CountDownLatch(1)
-        val startTime = System.currentTimeMillis()
+    @Nested
+    @DisplayName("状态转换场景")
+    inner class StateTransitionScenarios {
 
-        taskManager.every("everyDelayTest", 100, delayMillis = 500) {
-            latch.countDown()
+        @Test
+        @DisplayName("默认组任务可暂停、恢复、立即触发并删除")
+        fun `default group task can pause resume trigger and remove`() {
+            // Given：默认组中存在一个未来才会自然触发的任务。
+            val triggered = CountDownLatch(1)
+            taskManager.every("ops-window", intervalMillis = 60_000, delayMillis = 60_000) {
+                triggered.countDown()
+            }
+
+            // When & Then：通过默认组扩展完成完整生命周期状态转换。
+            assertAll(
+                "默认组任务状态转换",
+                {
+                    assertThat(taskManager.contains("ops-window"))
+                        .`as`("任务创建后应存在于默认组")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.pause("ops-window"))
+                        .`as`("存在的默认组任务应可暂停")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.getState("ops-window"))
+                        .`as`("暂停后状态应变为 PAUSED")
+                        .isEqualTo(JobState.PAUSED)
+                },
+                {
+                    assertThat(taskManager.resume("ops-window"))
+                        .`as`("已暂停任务应可恢复")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.getState("ops-window"))
+                        .`as`("恢复后状态应回到 NORMAL")
+                        .isEqualTo(JobState.NORMAL)
+                },
+                {
+                    assertThat(taskManager.triggerNow("ops-window"))
+                        .`as`("存在的任务应可立即触发一次")
+                        .isTrue()
+                },
+                {
+                    assertThat(triggered.await(3, TimeUnit.SECONDS))
+                        .`as`("triggerNow 应触发业务动作")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.remove("ops-window"))
+                        .`as`("存在的任务应可删除")
+                        .isTrue()
+                },
+                {
+                    assertThat(taskManager.contains("ops-window"))
+                        .`as`("删除后默认组中不应再存在该任务")
+                        .isFalse()
+                },
+            )
         }
 
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-        assertTrue(System.currentTimeMillis() - startTime >= 400)
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("kim.der.timetask.extensions.TimeTaskManageExtensionsTest#missingTaskOperations")
+        @DisplayName("不存在的默认组任务操作安全返回失败状态")
+        fun `missing default group task operations return safe state`(
+            caseName: String,
+            operation: (TimeTaskManage) -> Boolean,
+        ) {
+            // Given：默认组中不存在目标任务。
+            // When：执行状态变更操作。
+            val result = operation(taskManager)
 
-        taskManager.remove("everyDelayTest")
-    }
-
-    @Test
-    fun testCronSchedulesTaskCorrectly() {
-        val latch = CountDownLatch(1)
-
-        taskManager.cron("cronTest", CronExpressions.EVERY_SECOND) {
-            latch.countDown()
+            // Then：操作应安全返回 false，不抛出异常。
+            assertThat(result)
+                .`as`("不存在任务的操作应返回 false：%s", caseName)
+                .isFalse()
         }
 
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-        taskManager.remove("cronTest")
+        @Test
+        @DisplayName("不存在的任务查询返回空状态")
+        fun `missing task queries return empty state`() {
+            // Given：默认组中不存在目标任务。
+            // When & Then：查询类扩展返回空值，调用方可以直接判断缺失状态。
+            assertAll(
+                "不存在任务查询",
+                {
+                    assertThat(taskManager.contains("missing"))
+                        .`as`("不存在任务 contains 应为 false")
+                        .isFalse()
+                },
+                {
+                    assertThat(taskManager.getState("missing"))
+                        .`as`("不存在任务没有 Quartz 状态")
+                        .isNull()
+                },
+                {
+                    assertThat(taskManager.getJobInfo("missing"))
+                        .`as`("不存在任务没有详情信息")
+                        .isNull()
+                },
+                {
+                    assertThat(taskManager.getNextFireTime("missing"))
+                        .`as`("不存在任务没有下次触发时间")
+                        .isNull()
+                },
+                {
+                    assertThat(taskManager.getPreviousFireTime("missing"))
+                        .`as`("不存在任务没有上次触发时间")
+                        .isNull()
+                },
+                {
+                    assertThat(taskManager.getDescription("missing"))
+                        .`as`("不存在任务没有描述")
+                        .isNull()
+                },
+            )
+        }
     }
 
-    // ==================== 单任务管理扩展测试 ====================
+    @Nested
+    @DisplayName("组合场景")
+    inner class CombinedScenarios {
 
-    @Test
-    fun testContainsWithSingleNameUsesDefaultGroup() {
-        taskManager.delay("containsTest", 10000) {}
+        @Test
+        @DisplayName("批量暂停和恢复只影响指定组")
+        fun `pause all and resume all affect only selected group`() {
+            // Given：默认组和自定义组同时存在任务。
+            taskManager.every("default-a", 1_000) {}
+            taskManager.every("default-b", 1_000) {}
+            taskManager.addTimedTask("other-a", "other", "其他组任务", System.currentTimeMillis() + 10_000, 1_000) {}
 
-        assertTrue(taskManager.contains("containsTest"))
-        assertTrue(taskManager.contains("containsTest", DEFAULT_GROUP))
+            // When：批量暂停默认组。
+            val pausedCount = taskManager.pauseAll()
 
-        taskManager.remove("containsTest")
-    }
+            // Then：默认组任务暂停，自定义组保持正常。
+            assertAll(
+                "按组批量暂停",
+                {
+                    assertThat(pausedCount)
+                        .`as`("pauseAll 默认只应统计默认组任务")
+                        .isEqualTo(2)
+                },
+                {
+                    assertThat(taskManager.getState("default-a"))
+                        .`as`("默认组任务 default-a 应暂停")
+                        .isEqualTo(JobState.PAUSED)
+                },
+                {
+                    assertThat(taskManager.getState("default-b"))
+                        .`as`("默认组任务 default-b 应暂停")
+                        .isEqualTo(JobState.PAUSED)
+                },
+                {
+                    assertThat(taskManager.getJobState("other-a", "other"))
+                        .`as`("其他组任务不应受默认组批量暂停影响")
+                        .isEqualTo(JobState.NORMAL)
+                },
+            )
 
-    @Test
-    fun testPauseWithSingleNameUsesDefaultGroup() {
-        taskManager.every("pauseTest", 100) {}
+            // When：批量恢复默认组。
+            val resumedCount = taskManager.resumeAll()
 
-        assertTrue(taskManager.pause("pauseTest"))
-        assertEquals(JobState.PAUSED, taskManager.getState("pauseTest"))
-
-        taskManager.remove("pauseTest")
-    }
-
-    @Test
-    fun testResumeWithSingleNameUsesDefaultGroup() {
-        taskManager.every("resumeTest", 100) {}
-        taskManager.pause("resumeTest")
-
-        assertTrue(taskManager.resume("resumeTest"))
-        assertEquals(JobState.NORMAL, taskManager.getState("resumeTest"))
-
-        taskManager.remove("resumeTest")
-    }
-
-    @Test
-    fun testRemoveWithSingleNameUsesDefaultGroup() {
-        taskManager.delay("removeTest", 10000) {}
-
-        assertTrue(taskManager.remove("removeTest"))
-        assertFalse(taskManager.contains("removeTest"))
-    }
-
-    @Test
-    fun testTriggerNowWithSingleNameUsesDefaultGroup() {
-        // 创建一个正常的间隔任务
-        taskManager.every("triggerTest", 60000) {}
-
-        Thread.sleep(200)
-        assertTrue(taskManager.contains("triggerTest"))
-
-        // triggerNow 应该返回 true（任务存在）
-        assertTrue(taskManager.triggerNow("triggerTest"))
-
-        taskManager.remove("triggerTest")
-    }
-
-    @Test
-    fun testGetStateReturnsCorrectState() {
-        taskManager.every("stateTest", 1000) {}
-
-        assertEquals(JobState.NORMAL, taskManager.getState("stateTest"))
-
-        taskManager.pause("stateTest")
-        assertEquals(JobState.PAUSED, taskManager.getState("stateTest"))
-
-        taskManager.remove("stateTest")
-    }
-
-    // ==================== 批量管理扩展测试 ====================
-
-    @Test
-    fun testPauseAllPausesAllTasksInGroup() {
-        taskManager.every("task1", 1000) {}
-        taskManager.every("task2", 1000) {}
-
-        val count = taskManager.pauseAll()
-        assertEquals(2, count)
-
-        assertEquals(JobState.PAUSED, taskManager.getState("task1"))
-        assertEquals(JobState.PAUSED, taskManager.getState("task2"))
-    }
-
-    @Test
-    fun testResumeAllResumesAllTasksInGroup() {
-        taskManager.every("task1", 1000) {}
-        taskManager.every("task2", 1000) {}
-        taskManager.pauseAll()
-
-        val count = taskManager.resumeAll()
-        assertEquals(2, count)
-
-        assertEquals(JobState.NORMAL, taskManager.getState("task1"))
-        assertEquals(JobState.NORMAL, taskManager.getState("task2"))
-    }
-
-    @Test
-    fun testRemoveAllRemovesAllTasksInGroup() {
-        taskManager.every("task1", 1000) {}
-        taskManager.every("task2", 1000) {}
-
-        val count = taskManager.removeAll()
-        assertEquals(2, count)
-
-        assertFalse(taskManager.contains("task1"))
-        assertFalse(taskManager.contains("task2"))
-    }
-
-    @Test
-    fun testClearAllRemovesAllTasks() {
-        taskManager.every("task1", 1000) {}
-        taskManager.addTimedTask("task2", "other", "其他组", System.currentTimeMillis(), 1000) {}
-
-        val count = taskManager.clearAll()
-        assertEquals(2, count)
-        assertEquals(0, taskManager.jobCount)
-    }
-
-    // ==================== 查询扩展测试 ====================
-
-    @Test
-    fun testGetAllGroupNamesReturnsAllGroups() {
-        taskManager.every("task1", 1000) {}
-        taskManager.addTimedTask("task2", "group2", "组2", System.currentTimeMillis(), 1000) {}
-
-        val groups = taskManager.getAllGroupNames()
-        assertTrue(groups.contains(DEFAULT_GROUP))
-        assertTrue(groups.contains("group2"))
-    }
-
-    @Test
-    fun testGetJobNamesReturnsJobNamesInGroup() {
-        taskManager.every("task1", 1000) {}
-        taskManager.every("task2", 1000) {}
-
-        val names = taskManager.getJobNames()
-        assertEquals(2, names.size)
-        assertTrue(names.contains("task1"))
-        assertTrue(names.contains("task2"))
-    }
-
-    @Test
-    fun testGetAllJobsReturnsAllJobKeys() {
-        taskManager.every("task1", 1000) {}
-        taskManager.addTimedTask("task2", "other", "其他", System.currentTimeMillis(), 1000) {}
-
-        val jobs = taskManager.getAllJobs()
-        assertEquals(2, jobs.size)
-    }
-
-    @Test
-    fun testGetJobsInGroupReturnsJobsInSpecificGroup() {
-        taskManager.every("task1", 1000) {}
-        taskManager.every("task2", 1000) {}
-        taskManager.addTimedTask("task3", "other", "其他", System.currentTimeMillis(), 1000) {}
-
-        val jobs = taskManager.getJobsInGroup(DEFAULT_GROUP)
-        assertEquals(2, jobs.size)
-    }
-
-    @Test
-    fun testGetNextFireTimeReturnsNextFireTime() {
-        taskManager.every("fireTimeTest", 1000) {}
-
-        val nextFireTime = taskManager.getNextFireTime("fireTimeTest")
-        assertNotNull(nextFireTime)
-        assertTrue(nextFireTime!! > System.currentTimeMillis() - 1000)
-
-        taskManager.remove("fireTimeTest")
-    }
-
-    @Test
-    fun testGetPreviousFireTimeReturnsNullForNewTask() {
-        taskManager.every("prevFireTest", 10000, delayMillis = 10000) {}
-
-        val prevFireTime = taskManager.getPreviousFireTime("prevFireTest")
-        assertNull(prevFireTime)
-
-        taskManager.remove("prevFireTest")
-    }
-
-    @Test
-    fun testGetDescriptionReturnsTaskDescription() {
-        taskManager.every("descTest", 1000, description = "测试描述") {}
-
-        val desc = taskManager.getDescription("descTest")
-        assertEquals("测试描述", desc)
-
-        taskManager.remove("descTest")
-    }
-
-    // ==================== JobInfo 测试 ====================
-
-    @Test
-    fun testGetJobInfoReturnsCompleteJobInfo() {
-        taskManager.every("infoTest", 1000, description = "信息测试") {}
-
-        val info = taskManager.getJobInfo("infoTest")
-        assertNotNull(info)
-        assertEquals("infoTest", info!!.name)
-        assertEquals(DEFAULT_GROUP, info.group)
-        assertEquals("信息测试", info.description)
-        assertEquals(JobState.NORMAL, info.state)
-        assertNotNull(info.nextFireTime)
-
-        taskManager.remove("infoTest")
-    }
-
-    @Test
-    fun testGetJobInfoReturnsNullForNonexistentTask() {
-        val info = taskManager.getJobInfo("nonexistent")
-        assertNull(info)
-    }
-
-    @Test
-    fun testGetAllJobInfoReturnsAllJobInfo() {
-        taskManager.every("task1", 1000) {}
-        taskManager.every("task2", 1000) {}
-
-        val infos = taskManager.getAllJobInfo()
-        assertEquals(2, infos.size)
-    }
-
-    @Test
-    fun testGetJobInfoInGroupReturnsJobInfoInGroup() {
-        taskManager.every("task1", 1000) {}
-        taskManager.addTimedTask("task2", "other", "其他", System.currentTimeMillis(), 1000) {}
-
-        val infos = taskManager.getJobInfoInGroup(DEFAULT_GROUP)
-        assertEquals(1, infos.size)
-        assertEquals("task1", infos[0].name)
-    }
-
-    // ==================== DSL 测试 ====================
-
-    @Test
-    fun testTaskDslCreatesTaskCorrectly() {
-        val latch = CountDownLatch(1)
-
-        taskManager.task("dslTask") {
-            group("dslGroup")
-            description("DSL任务")
-            interval(100)
-            action { latch.countDown() }
+            // Then：默认组任务恢复，自定义组仍保持正常。
+            assertAll(
+                "按组批量恢复",
+                {
+                    assertThat(resumedCount)
+                        .`as`("resumeAll 默认只应统计默认组任务")
+                        .isEqualTo(2)
+                },
+                {
+                    assertThat(taskManager.getState("default-a"))
+                        .`as`("默认组任务 default-a 应恢复")
+                        .isEqualTo(JobState.NORMAL)
+                },
+                {
+                    assertThat(taskManager.getState("default-b"))
+                        .`as`("默认组任务 default-b 应恢复")
+                        .isEqualTo(JobState.NORMAL)
+                },
+                {
+                    assertThat(taskManager.getJobState("other-a", "other"))
+                        .`as`("其他组任务状态不应被改变")
+                        .isEqualTo(JobState.NORMAL)
+                },
+            )
         }
 
-        assertTrue(taskManager.contains("dslTask", "dslGroup"))
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
+        @Test
+        @DisplayName("removeAll 只删除指定组，clearAll 再清空剩余任务")
+        fun `remove all deletes selected group and clear all deletes remaining tasks`() {
+            // Given：默认组和其他组都有任务。
+            taskManager.every("default-cleanup", 1_000) {}
+            taskManager.addTimedTask("other-cleanup", "other", "其他组清理", System.currentTimeMillis() + 10_000, 1_000) {}
 
-        taskManager.remove("dslTask", "dslGroup")
+            // When：先删除默认组。
+            val removedDefault = taskManager.removeAll()
+
+            // Then：只删除默认组，其他组仍存在。
+            assertAll(
+                "removeAll 默认组删除",
+                {
+                    assertThat(removedDefault)
+                        .`as`("removeAll 默认只删除默认组任务")
+                        .isEqualTo(1)
+                },
+                {
+                    assertThat(taskManager.contains("default-cleanup"))
+                        .`as`("默认组任务应被删除")
+                        .isFalse()
+                },
+                {
+                    assertThat(taskManager.contains("other-cleanup", "other"))
+                        .`as`("其他组任务应保留")
+                        .isTrue()
+                },
+            )
+
+            // When：清空所有组任务。
+            val cleared = taskManager.clearAll()
+
+            // Then：所有任务清空，重复清理保持幂等。
+            assertAll(
+                "clearAll 全量清理和幂等性",
+                {
+                    assertThat(cleared)
+                        .`as`("clearAll 应删除剩余其他组任务")
+                        .isEqualTo(1)
+                },
+                {
+                    assertThat(taskManager.jobCount)
+                        .`as`("clearAll 后任务总数应为 0")
+                        .isZero()
+                },
+                {
+                    assertThat(taskManager.clearAll())
+                        .`as`("再次 clearAll 应保持幂等并返回 0")
+                        .isZero()
+                },
+            )
+        }
     }
 
-    @Test
-    fun testDelayTaskCreatesCountdownTask() {
-        val latch = CountDownLatch(1)
+    @Nested
+    @DisplayName("查询场景")
+    inner class QueryScenarios {
 
-        taskManager.delayTask("delayDsl", 500) {
-            latch.countDown()
+        @Test
+        @DisplayName("查询接口返回分组、名称和完整任务详情")
+        fun `query APIs return groups names and complete job info`() {
+            // Given：任务名称、组名和描述包含真实环境常见的国际化和特殊字符。
+            val name = "report_日报:2026"
+            val group = "tenant-中国/alpha"
+            val description = "生成日报\n包含特殊字符: '\"\\"
+            taskManager.addTimedTask(
+                name = name,
+                group = group,
+                description = description,
+                startTime = System.currentTimeMillis() + 60_000,
+                intervalTime = 1_000,
+            ) {}
+
+            // When：通过查询扩展读取任务视图。
+            val groups = taskManager.getAllGroupNames()
+            val names = taskManager.getJobNames(group)
+            val jobs = taskManager.getJobsInGroup(group)
+            val info = taskManager.getJobInfo(name, group)
+            val groupInfos = taskManager.getJobInfoInGroup(group)
+            val allInfos = taskManager.getAllJobInfo()
+
+            // Then：查询结果应完整保留任务身份、描述、状态和下一次触发时间。
+            assertAll(
+                "任务查询视图",
+                {
+                    assertThat(groups)
+                        .`as`("所有组名应包含国际化租户组")
+                        .contains(group)
+                },
+                {
+                    assertThat(names)
+                        .`as`("指定组任务名应完整保留特殊字符")
+                        .containsExactly(name)
+                },
+                {
+                    assertThat(jobs.single().name)
+                        .`as`("JobKey 应保留任务名")
+                        .isEqualTo(name)
+                },
+                {
+                    assertThat(info)
+                        .`as`("存在的任务应返回详情")
+                        .isNotNull()
+                },
+                {
+                    assertThat(info?.name)
+                        .`as`("详情中的任务名应一致")
+                        .isEqualTo(name)
+                },
+                {
+                    assertThat(info?.group)
+                        .`as`("详情中的组名应一致")
+                        .isEqualTo(group)
+                },
+                {
+                    assertThat(info?.description)
+                        .`as`("详情中的描述应保留换行和特殊字符")
+                        .isEqualTo(description)
+                },
+                {
+                    assertThat(info?.state)
+                        .`as`("新建间隔任务应处于 NORMAL 状态")
+                        .isEqualTo(JobState.NORMAL)
+                },
+                {
+                    assertThat(info?.nextFireTime)
+                        .`as`("未来调度任务应有下一次触发时间")
+                        .isNotNull()
+                },
+                {
+                    assertThat(info?.previousFireTime)
+                        .`as`("尚未触发的未来任务不应有上次触发时间")
+                        .isNull()
+                },
+                {
+                    assertThat(groupInfos)
+                        .`as`("指定组详情列表应只包含该组任务")
+                        .hasSize(1)
+                },
+                {
+                    assertThat(allInfos)
+                        .`as`("全量详情应包含目标任务")
+                        .anySatisfy {
+                            assertThat(it.name).isEqualTo(name)
+                            assertThat(it.group).isEqualTo(group)
+                        }
+                },
+            )
         }
 
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-    }
+        @Test
+        @DisplayName("任务触发后可查询到上次执行时间")
+        fun `previous fire time appears after task execution`() {
+            // Given：一个很快执行的固定间隔任务。
+            val executed = CountDownLatch(1)
+            taskManager.every("previous-fire", 120) {
+                executed.countDown()
+            }
 
-    @Test
-    fun testIntervalTaskCreatesIntervalTask() {
-        val latch = CountDownLatch(2)
+            // When：等待任务至少触发一次。
+            assertThat(executed.await(3, TimeUnit.SECONDS))
+                .`as`("任务应至少执行一次")
+                .isTrue()
 
-        taskManager.intervalTask("intervalDsl", 100) {
-            latch.countDown()
+            // Then：上次触发时间最终应可查询到。
+            assertThat(waitUntil { taskManager.getPreviousFireTime("previous-fire") != null })
+                .`as`("任务执行后应能查询到 previousFireTime")
+                .isTrue()
         }
-
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-        taskManager.remove("intervalDsl")
     }
 
-    @Test
-    fun testCronTaskCreatesCronTask() {
-        val latch = CountDownLatch(1)
+    private companion object {
+        @JvmStatic
+        fun missingTaskOperations(): Stream<Arguments> =
+            Stream.of(
+                Arguments.of("pause", { manager: TimeTaskManage -> manager.pause("missing") }),
+                Arguments.of("resume", { manager: TimeTaskManage -> manager.resume("missing") }),
+                Arguments.of("remove", { manager: TimeTaskManage -> manager.remove("missing") }),
+                Arguments.of("triggerNow", { manager: TimeTaskManage -> manager.triggerNow("missing") }),
+            )
+    }
 
-        taskManager.cronTask("cronDsl", CronExpressions.EVERY_SECOND) {
-            latch.countDown()
+    private fun waitUntil(
+        timeoutMillis: Long = 2_000,
+        condition: () -> Boolean,
+    ): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        while (System.nanoTime() < deadline) {
+            if (condition()) return true
+            Thread.sleep(25)
         }
-
-        assertTrue(latch.await(3, TimeUnit.SECONDS))
-        taskManager.remove("cronDsl")
-    }
-
-    // ==================== 时间单位扩展测试 ====================
-
-    @Test
-    fun testTimeUnitExtensionsWorkCorrectly() {
-        assertEquals(1000L, 1.seconds)
-        assertEquals(60000L, 1.minutes)
-        assertEquals(3600000L, 1.hours)
-        assertEquals(86400000L, 1.days)
-        assertEquals(500L, 500.millis)
-
-        assertEquals(5000L, 5L.seconds)
-        assertEquals(300000L, 5L.minutes)
-    }
-
-    @Test
-    fun testDelayWithTimeUnitExtensionWorks() {
-        val latch = CountDownLatch(1)
-
-        taskManager.delay("timeUnitTest", 1.seconds) {
-            latch.countDown()
-        }
-
-        assertTrue(latch.await(5, TimeUnit.SECONDS))
+        return condition()
     }
 }

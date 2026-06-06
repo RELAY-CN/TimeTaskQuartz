@@ -699,6 +699,9 @@ class TimeTaskManage {
             JobBuilder
                 .newJob(RunnableRun::class.java)
                 .withIdentity(key)
+                // triggerNow 直接触发 JobDetail，不携带原 Trigger 的 JobDataMap；
+                // 同步写入回调可保证计划触发和手动触发都执行同一业务动作。
+                .usingJobData(JobDataMap(trigger.jobDataMap))
                 .requestRecovery(true)
                 .apply { if (storeDurably) storeDurably(true) }
                 .build()
