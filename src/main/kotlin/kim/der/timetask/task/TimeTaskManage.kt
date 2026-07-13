@@ -180,7 +180,7 @@ class TimeTaskManage {
      *
      * @param waitForJobsToComplete 是否等待正在执行的任务完成
      *        - `true`：等待所有任务完成后关闭
-     *        - `false`：立即关闭，可能中断正在执行的任务
+     *        - `false`：不等待当前任务完成，但不会主动中断正在执行的任务
      * @author Dr (dr@der.kim)
      * @date 2025-11-21
      */
@@ -220,7 +220,8 @@ class TimeTaskManage {
      * 创建一个倒计时任务（一次性任务）。
      *
      * 任务在指定时间执行一次后自动删除。
-     * 底层 Quartz Job 会以 durable 形式登记，因此回调执行完成后会主动移除任务定义与触发器。
+     * 底层 Quartz Job 使用 non-durable 生命周期；原定 trigger 完成后由 Quartz 自然清理任务定义。
+     * 在正式执行前调用 [triggerNow] 只会额外执行一次，不会消费原定 trigger。
      *
      * @param name 任务名称，在同一组内必须唯一
      * @param group 任务组名
@@ -252,17 +253,11 @@ class TimeTaskManage {
             buildTrigger(
                 key = key,
                 description = description,
-                action = {
-                    try {
-                        runnable.run()
-                    } finally {
-                        // 倒计时任务只执行一次；即使回调抛异常，也要拆掉 durable Job 与 trigger。
-                        remove(key)
-                    }
-                },
+                action = { runnable.run() },
             ) { startAt(Date(startTime)) }
 
-        scheduleJob(key, trigger)
+        // non-durable Job 会在最后一个 trigger 完成后由 Quartz 清理；手动触发不会删除原定 trigger。
+        scheduleJob(key, trigger, storeDurably = false)
     }
 
     /**
@@ -553,10 +548,18 @@ class TimeTaskManage {
      */
     fun remove(jobKey: JobKey): Boolean {
         return try {
+            if (!contains(jobKey)) {
+                return false
+            }
+
             // 先暂停再拆 trigger / job，避免删除窗口里再次被调度器拉起。
             pause(jobKey)
             scheduler.unscheduleJob(TriggerKey.triggerKey(jobKey.name, jobKey.group))
-            scheduler.deleteJob(jobKey)
+            // non-durable 一次性 Job 会在移除最后一个 trigger 时被 Quartz 自动删除。
+            if (scheduler.checkExists(jobKey)) {
+                scheduler.deleteJob(jobKey)
+            }
+            !scheduler.checkExists(jobKey)
         } catch (_: Exception) {
             false
         }
@@ -577,7 +580,8 @@ class TimeTaskManage {
      * 更新任务的执行间隔。
      *
      * 仅适用于使用 SimpleSchedule 的任务（通过 [addTimedTask] 创建的间隔任务）。
-     * 当前实现会重建一个新 trigger，并从“调用 reschedule 的当前时刻”重新开始计算下一次触发时间。
+     * 当前实现会重建一个同类型 trigger，并从“调用 reschedule 的当前时刻”重新开始计算下一次触发时间。
+     * 有限重复任务会保留尚未执行的剩余次数，不会被转换为永久任务。
      *
      * @param name 任务名称
      * @param group 任务组名
@@ -591,7 +595,13 @@ class TimeTaskManage {
 
         return try {
             val triggerKey = TriggerKey.triggerKey(name, group)
-            val oldTrigger = scheduler.getTrigger(triggerKey) ?: return false
+            val oldTrigger = scheduler.getTrigger(triggerKey) as? SimpleTrigger ?: return false
+            val remainingRepeatCount =
+                if (oldTrigger.repeatCount == SimpleTrigger.REPEAT_INDEFINITELY) {
+                    SimpleTrigger.REPEAT_INDEFINITELY
+                } else {
+                    (oldTrigger.repeatCount - oldTrigger.timesTriggered).coerceAtLeast(0)
+                }
 
             val newTrigger = TriggerBuilder.newTrigger()
                 .withIdentity(triggerKey)
@@ -600,7 +610,7 @@ class TimeTaskManage {
                 .withSchedule(
                     SimpleScheduleBuilder.simpleSchedule()
                         .withIntervalInMilliseconds(newIntervalMillis)
-                        .repeatForever()
+                        .withRepeatCount(remainingRepeatCount)
                         .withMisfireHandlingInstructionNextWithExistingCount()
                 )
                 // 重建后从当前时刻重新起算，避免沿用旧 trigger 已经过期的首触发时间。
@@ -617,7 +627,7 @@ class TimeTaskManage {
      * 更新任务的 Cron 表达式。
      *
      * 仅适用于使用 CronSchedule 的任务。
-     * 当前实现会基于系统默认时区重建 trigger，不会保留旧 trigger 上的自定义时区设置。
+     * 当前实现会保留旧 trigger 的时区，只更新 Cron 表达式。
      *
      * @param name 任务名称
      * @param group 任务组名
@@ -629,7 +639,7 @@ class TimeTaskManage {
     fun reschedule(name: String, group: String, newCron: String): Boolean {
         return try {
             val triggerKey = TriggerKey.triggerKey(name, group)
-            val oldTrigger = scheduler.getTrigger(triggerKey) ?: return false
+            val oldTrigger = scheduler.getTrigger(triggerKey) as? CronTrigger ?: return false
 
             val newTrigger = TriggerBuilder.newTrigger()
                 .withIdentity(triggerKey)
@@ -638,8 +648,8 @@ class TimeTaskManage {
                 .withSchedule(
                     cronSchedule(newCron)
                         .withMisfireHandlingInstructionFireAndProceed()
-                        // 历史行为固定回落到系统默认时区，而不是继承旧 trigger 的配置。
-                        .inTimeZone(TimeZone.getDefault())
+                        // 重调度只更新表达式，继续沿用原任务的业务时区。
+                        .inTimeZone(oldTrigger.timeZone)
                 )
                 .build()
 

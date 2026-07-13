@@ -56,9 +56,8 @@ repositories {
 }
 
 dependencies {
-    // Users should not operate Quartz
-    // Hence the RunTime
-    implementation("org.quartz-scheduler:quartz:2.5.1") {
+    // 公开重载暴露 JobKey 等 Quartz 类型，消费者编译时必须能传递获取 Quartz。
+    api("org.quartz-scheduler:quartz:2.5.1") {
         // Stand-alone operation, does not require any persistence
         exclude("com.mchange", "c3p0")
         exclude("com.mchange", "mchange-commons-java")
@@ -70,6 +69,7 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.26.3")
     testImplementation("org.mockito:mockito-core:5.18.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation(gradleTestKit())
     testRuntimeOnly("org.slf4j:slf4j-nop:2.0.13")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -94,6 +94,45 @@ tasks.withType<JavaCompile> {
 
 tasks.test {
     useJUnitPlatform()
+    filter {
+        excludeTestsMatching("kim.der.timetask.contract.PublishedApiContractTest")
+    }
+}
+
+val publishedApiRepository = layout.buildDirectory.dir("test-maven-repository")
+val testSourceSet = extensions.getByType(SourceSetContainer::class.java).named("test")
+
+publishing {
+    repositories {
+        maven {
+            name = "test"
+            url = uri(publishedApiRepository)
+        }
+    }
+}
+
+val publishedApiContractTest = tasks.register<Test>("publishedApiContractTest") {
+    description = "发布到隔离 Maven 仓库并验证外部消费者的 API 编译契约"
+    group = "verification"
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("kim.der.timetask.contract.PublishedApiContractTest")
+    }
+    testClassesDirs = testSourceSet.get().output.classesDirs
+    classpath = testSourceSet.get().runtimeClasspath
+    dependsOn(testSourceSet.get().classesTaskName)
+    dependsOn("publishMavenPublicationToTestRepository")
+    shouldRunAfter(tasks.test)
+    systemProperty("publishedApiRepository", publishedApiRepository.get().asFile.absolutePath)
+    systemProperty("publishedApiVersion", project.version.toString())
+    inputs
+        .dir(publishedApiRepository)
+        .withPropertyName("publishedApiRepository")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+tasks.named("check") {
+    dependsOn(publishedApiContractTest)
 }
 
 // 最终形态：生成到 build/generated-resources，再由 jar 注入运行时路径（源树不再被污染）

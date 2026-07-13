@@ -15,7 +15,11 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
+import org.quartz.CronTrigger
+import org.quartz.SimpleTrigger
+import org.quartz.TriggerKey
 import java.util.Properties
+import java.util.TimeZone
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
@@ -209,7 +213,7 @@ class TimeTaskManageTest {
                 },
                 {
                     assertThat(waitUntil { !taskManager.contains("reminder", "alerts") })
-                        .`as`("倒计时任务执行后应主动删除 durable Job")
+                        .`as`("倒计时任务执行后应自然清理 non-durable Job")
                         .isTrue()
                 },
                 {
@@ -218,6 +222,46 @@ class TimeTaskManageTest {
                         .isEqualTo(1)
                 },
             )
+        }
+
+        @Test
+        @DisplayName("手动触发未来倒计时后仍保留原定执行")
+        fun `trigger now does not consume future countdown schedule`() {
+            // Given：未来仍有一次正式调度的倒计时任务。
+            val counter = AtomicInteger(0)
+            val executions = CountDownLatch(2)
+            taskManager.addCountdown(
+                name = "manual-countdown",
+                group = "alerts",
+                description = "手动预触发后仍需正式执行",
+                startTime = System.currentTimeMillis() + 2_000,
+            ) {
+                counter.incrementAndGet()
+                executions.countDown()
+            }
+
+            // When：在正式时间之前手动触发一次。
+            val triggered = taskManager.triggerNow("manual-countdown", "alerts")
+
+            // Then：手动执行不应消费原 trigger，正式时间仍会再次执行并自然清理。
+            assertThat(triggered)
+                .`as`("未来倒计时应支持手动触发")
+                .isTrue()
+            assertThat(waitUntil(timeoutMillis = 1_000) { counter.get() == 1 })
+                .`as`("手动触发应先执行一次业务动作")
+                .isTrue()
+            assertThat(taskManager.contains("manual-countdown", "alerts"))
+                .`as`("手动触发后原倒计时仍应保持注册")
+                .isTrue()
+            assertThat(executions.await(4, TimeUnit.SECONDS))
+                .`as`("到达原定时间后应再次执行")
+                .isTrue()
+            assertThat(counter.get())
+                .`as`("手动触发与原定触发应各执行一次")
+                .isEqualTo(2)
+            assertThat(waitUntil { !taskManager.contains("manual-countdown", "alerts") })
+                .`as`("原定一次性触发完成后应自然清理")
+                .isTrue()
         }
 
         @Test
@@ -259,7 +303,7 @@ class TimeTaskManageTest {
                 throw IllegalStateException("通知网关不可用")
             }
 
-            // Then：即使业务动作失败，finally 清理仍应发生。
+            // Then：即使业务动作失败，Quartz 仍应按 non-durable 生命周期自然清理。
             assertAll(
                 "倒计时异常清理",
                 {
@@ -720,6 +764,145 @@ class TimeTaskManageTest {
                     assertThat(executed.await(3, TimeUnit.SECONDS))
                         .`as`("更新 Cron 后任务应按新表达式触发")
                         .isTrue()
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("重调度拒绝静默改变任务类型")
+        fun `reschedule rejects cross type trigger conversion`() {
+            // Given：分别存在 Cron 与固定间隔任务。
+            taskManager.addTimedTask(
+                name = "cron-contract",
+                group = "system",
+                description = "Cron 类型契约",
+                cron = "0 0 12 * * ?",
+            ) {}
+            taskManager.addTimedTask(
+                name = "interval-contract",
+                group = "system",
+                description = "间隔类型契约",
+                startTime = System.currentTimeMillis() + 60_000,
+                intervalTime = 60_000,
+            ) {}
+
+            // When：调用与原 trigger 类型不匹配的重调度入口。
+            val cronToInterval = taskManager.reschedule("cron-contract", "system", 1_000)
+            val intervalToCron = taskManager.reschedule("interval-contract", "system", "0/1 * * * * ?")
+
+            // Then：操作失败且原 trigger 类型保持不变。
+            assertAll(
+                "跨类型重调度保护",
+                {
+                    assertThat(cronToInterval)
+                        .`as`("Cron 任务不应被间隔入口静默转换")
+                        .isFalse()
+                },
+                {
+                    assertThat(intervalToCron)
+                        .`as`("间隔任务不应被 Cron 入口静默转换")
+                        .isFalse()
+                },
+                {
+                    assertThat(taskManager.scheduler.getTrigger(TriggerKey("cron-contract", "system")))
+                        .`as`("Cron trigger 类型应保持不变")
+                        .isInstanceOf(CronTrigger::class.java)
+                },
+                {
+                    assertThat(taskManager.scheduler.getTrigger(TriggerKey("interval-contract", "system")))
+                        .`as`("Simple trigger 类型应保持不变")
+                        .isInstanceOf(SimpleTrigger::class.java)
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("有限间隔任务重调度后保留剩余执行次数")
+        fun `interval reschedule preserves finite repeat policy`() {
+            // Given：总共计划执行三次的有限任务已完成第一次执行。
+            val executionCount = AtomicInteger(0)
+            val firstExecution = CountDownLatch(1)
+            val allExecutions = CountDownLatch(3)
+            taskManager.addTimedTask(
+                name = "finite-reschedule",
+                group = "system",
+                description = "有限次数重调度",
+                startTime = System.currentTimeMillis() + 200,
+                intervalTime = 60_000,
+                repeatCount = 2,
+            ) {
+                if (executionCount.incrementAndGet() == 1) {
+                    firstExecution.countDown()
+                }
+                allExecutions.countDown()
+            }
+            assertThat(firstExecution.await(3, TimeUnit.SECONDS))
+                .`as`("有限任务应先完成第一次执行")
+                .isTrue()
+
+            // When：第一次执行后只修改执行间隔。
+            val result = taskManager.reschedule("finite-reschedule", "system", 100)
+            val trigger =
+                taskManager.scheduler.getTrigger(TriggerKey("finite-reschedule", "system")) as SimpleTrigger
+
+            // Then：新 trigger 只保留剩余两次执行，完成后自然清理 Job。
+            assertAll(
+                "有限重复策略",
+                {
+                    assertThat(result)
+                        .`as`("同类型间隔任务应可重调度")
+                        .isTrue()
+                },
+                {
+                    assertThat(trigger.repeatCount)
+                        .`as`("已执行一次后，新 trigger 应仅再重复一次")
+                        .isEqualTo(1)
+                },
+            )
+            assertThat(allExecutions.await(3, TimeUnit.SECONDS))
+                .`as`("重调度后应完成原计划剩余两次执行")
+                .isTrue()
+            assertThat(executionCount.get())
+                .`as`("重调度不应增加或减少有限任务的总执行次数")
+                .isEqualTo(3)
+            assertThat(waitUntil { !taskManager.contains("finite-reschedule", "system") })
+                .`as`("有限任务完成全部执行后应自然清理")
+                .isTrue()
+        }
+
+        @Test
+        @DisplayName("Cron 重调度保留原任务时区")
+        fun `cron reschedule preserves configured time zone`() {
+            // Given：使用与 JVM 默认值不同的业务时区创建 Cron 任务。
+            val timeZone =
+                listOf("Pacific/Honolulu", "UTC", "Asia/Tokyo")
+                    .map(TimeZone::getTimeZone)
+                    .first { it.id != TimeZone.getDefault().id }
+            taskManager.addTimedTask(
+                name = "timezone-reschedule",
+                group = "system",
+                description = "跨时区报表",
+                cron = "0 0 12 * * ?",
+                timeZone = timeZone,
+            ) {}
+
+            // When：只更新 Cron 表达式。
+            val result = taskManager.reschedule("timezone-reschedule", "system", "0 30 12 * * ?")
+            val trigger =
+                taskManager.scheduler.getTrigger(TriggerKey("timezone-reschedule", "system")) as CronTrigger
+
+            // Then：原业务时区必须继续生效。
+            assertAll(
+                "Cron 时区契约",
+                {
+                    assertThat(result)
+                        .`as`("同类型 Cron 任务应可重调度")
+                        .isTrue()
+                },
+                {
+                    assertThat(trigger.timeZone.id)
+                        .`as`("重调度不应回落到 JVM 默认时区")
+                        .isEqualTo(timeZone.id)
                 },
             )
         }

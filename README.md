@@ -7,8 +7,8 @@
 - 🎯 **简单易用** - 提供简洁的 API，无需深入了解 Quartz 的复杂配置
 - ⏰ **多种调度方式** - 支持倒计时、固定间隔、Cron 表达式三种调度方式
 - 🔄 **任务管理** - 支持任务的添加、暂停、恢复、删除、重调度和查询
-- 🛡️ **稳定可靠** - 基于成熟的 Quartz 2.5.1，支持任务恢复和持久化
-- 📦 **轻量级** - 仅依赖 Quartz，无额外持久化依赖（运行时独立运行）
+- 🛡️ **稳定可靠** - 基于成熟的 Quartz 2.5.1，默认使用内存任务存储
+- 📦 **轻量级** - 仅依赖 Quartz，任务回调保存在当前进程内
 - 🧩 **Kotlin DSL** - 提供流畅的 DSL 语法创建任务
 - ⚡ **性能优化** - 可配置线程池大小，优化资源使用
 
@@ -32,6 +32,8 @@ dependencies {
 }
 ```
 
+升级已有项目时，请先阅读 [迁移指南](MIGRATION.md)。
+
 ### 基本使用
 
 ```kotlin
@@ -41,8 +43,11 @@ import kim.der.timetask.task.TimeTaskManage
 val taskManager = TimeTaskManage()
 
 // 或指定线程池大小
-val taskManager = TimeTaskManage(threadPoolSize = 10)
+val taskManagerWithMoreThreads = TimeTaskManage(threadPoolSize = 10)
 ```
+
+> 默认构造函数使用 `RAMJobStore`，任务和进程内 Lambda 不会在进程重启后恢复。
+> 即使通过 `Properties` 配置其他 JobStore，本库也不提供 Lambda 的跨进程持久化恢复能力。
 
 #### 传统 API
 
@@ -83,19 +88,19 @@ taskManager.addTimedTask(
 if (taskManager.contains("myTimedTask", "default")) {
     // 暂停任务
     taskManager.pause("myTimedTask", "default")
-    
+
     // 恢复任务
     taskManager.resume("myTimedTask", "default")
-    
+
     // 立即触发一次
     taskManager.triggerNow("myTimedTask", "default")
-    
+
     // 重调度（修改间隔）
     taskManager.reschedule("myTimedTask", "default", 5000)
-    
+
     // 获取任务状态
     val state = taskManager.getJobState("myTimedTask", "default")
-    
+
     // 删除任务
     taskManager.remove("myTimedTask", "default")
 }
@@ -107,8 +112,20 @@ taskManager.shutdownNow()
 #### Kotlin 扩展 & DSL
 
 ```kotlin
-import kim.der.timetask.extensions.*
+import kim.der.timetask.dsl.cronTask
+import kim.der.timetask.dsl.delayTask
+import kim.der.timetask.dsl.intervalTask
 import kim.der.timetask.dsl.task
+import kim.der.timetask.extensions.CronExpressions
+import kim.der.timetask.extensions.cron
+import kim.der.timetask.extensions.delay
+import kim.der.timetask.extensions.every
+import kim.der.timetask.extensions.hours
+import kim.der.timetask.extensions.minutes
+import kim.der.timetask.extensions.runAt
+import kim.der.timetask.extensions.runNow
+import kim.der.timetask.extensions.seconds
+import kim.der.timetask.task.TimeTaskManage
 
 val taskManager = TimeTaskManage()
 
@@ -217,7 +234,7 @@ val allJobInfo = taskManager.getAllJobInfo()
 | `addCountdown(name, group, description, startTime, runnable)` | 添加一次性倒计时任务，执行后自动删除 |
 | `addTimedTask(name, group, description, startTime, intervalTime, runnable)` | 添加固定间隔的定时任务 |
 | `addTimedTask(name, group, description, startTime, intervalTime, repeatCount, runnable)` | 添加固定次数的间隔任务；`repeatCount` 不包含首次执行 |
-| `addTimedTask(name, group, description, cron, runnable, timeZone?)` | 添加 Cron 表达式的定时任务 |
+| `addTimedTask(name, group, description, cron, timeZone?, runnable)` | 添加 Cron 表达式的定时任务 |
 
 #### 任务管理
 
@@ -227,9 +244,9 @@ val allJobInfo = taskManager.getAllJobInfo()
 | `pause(name, group)` | `Boolean` | 暂停任务 |
 | `resume(name, group)` | `Boolean` | 恢复暂停的任务 |
 | `remove(name, group)` | `Boolean` | 删除任务 |
-| `triggerNow(name, group)` | `Boolean` | 立即触发一次任务 |
-| `reschedule(name, group, newIntervalMillis)` | `Boolean` | 更新任务执行间隔 |
-| `reschedule(name, group, newCron)` | `Boolean` | 更新任务 Cron 表达式 |
+| `triggerNow(name, group)` | `Boolean` | 额外触发一次任务，不改变原定调度 |
+| `reschedule(name, group, newIntervalMillis)` | `Boolean` | 更新间隔任务并保留有限任务的剩余重复次数；类型不匹配时返回 `false` |
+| `reschedule(name, group, newCron)` | `Boolean` | 更新 Cron 任务并保留原时区；类型不匹配时返回 `false` |
 | `getJobState(name, group)` | `JobState?` | 获取任务状态 |
 
 #### 调度器控制
@@ -271,7 +288,7 @@ val allJobInfo = taskManager.getAllJobInfo()
 | `pause(name)` | 暂停任务 |
 | `resume(name)` | 恢复任务 |
 | `remove(name)` | 删除任务 |
-| `triggerNow(name)` | 立即触发 |
+| `triggerNow(name)` | 额外触发一次，不改变原定调度 |
 | `getState(name)` | 获取状态 |
 
 #### 批量管理
@@ -331,56 +348,75 @@ val allJobInfo = taskManager.getAllJobInfo()
 ### CronBuilder
 
 ```kotlin
-// 每 N 秒/分钟/小时
-CronBuilder.everySeconds(30)  // "0/30 * * * * ?"
-CronBuilder.everyMinutes(15)  // "0 */15 * * * ?"
-CronBuilder.everyHours(2)     // "0 0 */2 * * ?"
+import kim.der.timetask.extensions.CronBuilder
+import kim.der.timetask.extensions.describeCron
+import kim.der.timetask.extensions.getNextFireTime
+import kim.der.timetask.extensions.isValidCron
+
+// 每 N 秒/分钟/小时（Quartz Cron 字段步进）
+val every30Seconds = CronBuilder.everySeconds(30) // "0/30 * * * * ?"
+val every15Minutes = CronBuilder.everyMinutes(15) // "0 */15 * * * ?"
+val every2Hours = CronBuilder.everyHours(2)       // "0 0 */2 * * ?"
 
 // 每天指定时间
-CronBuilder.dailyAt(8, 30)    // "0 30 8 * * ?"
+val dailyAt830 = CronBuilder.dailyAt(8, 30) // "0 30 8 * * ?"
 
 // 每周指定时间
-CronBuilder.weeklyAt(DayOfWeek.MONDAY, 9)  // "0 0 9 ? * MON"
+val mondayAt9 = CronBuilder.weeklyAt(CronBuilder.DayOfWeek.MONDAY, 9) // "0 0 9 ? * MON"
 
 // 每月指定日期
-CronBuilder.monthlyAt(15, 10, 30)  // "0 30 10 15 * ?"
-CronBuilder.monthlyLastDay(23)     // "0 0 23 L * ?"
+val monthlyAt1030 = CronBuilder.monthlyAt(15, 10, 30) // "0 30 10 15 * ?"
+val lastDayAt23 = CronBuilder.monthlyLastDay(23)      // "0 0 23 L * ?"
 
 // 工作日/周末
-CronBuilder.weekdaysAt(9)    // "0 0 9 ? * MON-FRI"
-CronBuilder.weekendsAt(10)   // "0 0 10 ? * SAT,SUN"
+val weekdaysAt9 = CronBuilder.weekdaysAt(9)  // "0 0 9 ? * MON-FRI"
+val weekendsAt10 = CronBuilder.weekendsAt(10) // "0 0 10 ? * SAT,SUN"
 
 // 辅助函数
-isValidCron("0 0 12 * * ?")  // true
-getNextFireTime(cron)        // 下次触发时间
-describeCron(cron)           // 表达式描述
+val valid = isValidCron(dailyAt830)            // true
+val nextFireTime = getNextFireTime(dailyAt830) // 下次触发时间
+val description = describeCron(dailyAt830)     // 表达式描述
 ```
+
+`everySeconds()`、`everyMinutes()` 和 `everyHours()` 按 Quartz Cron 字段边界步进，
+并不保证从任务注册或上次执行时刻起经过固定时长后触发。例如 `everyHours(5)`
+会在每天的 0、5、10、15、20 点触发。需要严格固定间隔时，请使用 `TimeTaskManage.every()`。
 
 ### DSL（`kim.der.timetask.dsl`）
 
 ```kotlin
-// 完整 DSL
-taskManager.task("name") {
-    group("组名")           // 可选，默认 "default"
-    description("描述")     // 可选
-    delay(5000)            // 延迟执行（倒计时任务）
-    // 或
-    startAt(timestamp)     // 指定开始时间
-    startAfter(5000)       // 延迟开始
-    interval(60000)        // 执行间隔（间隔任务）
-    repeatCount(2)         // 可选；首次执行后再重复 2 次，总共执行 3 次；-1 表示无限重复
-    // 或
-    cron("0 0 12 * * ?")   // Cron 表达式（Cron 任务）
-    action { ... }         // 执行的操作
+// 延迟执行一次
+taskManager.task("one-shot") {
+    group("default")
+    description("延迟 5 秒执行")
+    delay(5_000)
+    action { println("one-shot") }
+}
+
+// 延迟开始的有限间隔任务
+taskManager.task("interval-report") {
+    group("reports")
+    startAfter(5_000)
+    interval(60_000)
+    repeatCount(2) // 首次执行后再重复 2 次，总共执行 3 次
+    action { println("interval report") }
+}
+
+// Cron 任务
+taskManager.task("daily-report") {
+    cron("0 0 12 * * ?")
+    action { println("daily report") }
 }
 
 // 便捷函数
-delayTask(name, delayMillis, group?, description?) { ... }
-intervalTask(name, intervalMillis, group?, delayMillis?, description?) { ... }
-cronTask(name, cron, group?, description?) { ... }
+taskManager.delayTask("delay", 5_000) { println("delayed") }
+taskManager.intervalTask("interval", 10_000) { println("interval") }
+taskManager.cronTask("cron", "0 * * * * ?") { println("cron") }
 ```
 
 ## 版本变更
+
+本次 API 契约修正的行为变化与升级检查项见 [迁移指南](MIGRATION.md)。
 
 ### v1.1.0 (当前)
 
@@ -424,15 +460,15 @@ cronTask(name, cron, group?, description?) { ... }
 
 ### 构建命令
 
-```bash
+```powershell
 # 构建项目
-./gradlew build
+gradle build
 
 # 运行测试
-./gradlew test
+gradle test
 
 # 打包
-./gradlew jar
+gradle jar
 ```
 
 ## 许可证
