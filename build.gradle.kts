@@ -2,12 +2,26 @@
  * Copyright 2020-2025 Dr (dr@der.kim) and contributors.
  */
 
+import org.gradle.api.Action
+import org.gradle.api.DefaultTask
 import org.gradle.api.Project
+import org.gradle.api.Task
 import org.gradle.api.artifacts.ResolvedArtifact
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.tasks.ClasspathNormalizer
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.IgnoreEmptyDirectories
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
@@ -142,8 +156,9 @@ configureGraalVmAgent()
 publishing {
     publications {
         create<MavenPublication>("maven") {
+            val publicationName = project.name
             groupId = "kim.der"
-            artifactId = project.name
+            artifactId = publicationName
             version = project.version.toString()
 
             from(project.components.getByName("java"))
@@ -174,7 +189,7 @@ publishing {
             pom.withXml {
                 val root = asNode()
                 root.appendNode("description", "TimeTask-Quartz")
-                root.appendNode("name", project.name)
+                root.appendNode("name", publicationName)
                 root.appendNode("url", "https://github.com/RELAY-CN/TimeTaskQuartz")
             }
         }
@@ -199,10 +214,7 @@ publishing {
  */
 fun Project.configureGradleRes() {
     val gitCommitHash = project.version.toString()
-    val generatedResourcesDir = layout.buildDirectory.dir("generated-resources")
-    val generatedGradleResDir = generatedResourcesDir.map {
-        it.dir("gradleRes/${project.name}")
-    }
+    val generatedGradleResDir = layout.buildDirectory.dir("generated-resources/gradleRes/${project.name}")
     val compileClasspath = configurations.named("compileClasspath")
     val dependencyResources =
         providers.provider {
@@ -252,55 +264,19 @@ fun Project.configureGradleRes() {
     val compileOnlyDependencies = dependencyResources.map { it.compileOnly }
 
     val generateGradleRes =
-        tasks.register("generateGradleRes") {
+        tasks.register<GenerateGradleRes>("generateGradleRes") {
             group = "build"
             description = "生成依赖清单、主输出清单和 Git 提交哈希"
             dependsOn("classes")
 
-            inputs.property("gitCommitHash", gitCommitHash)
-            inputs.property("implementationDependencies", implementationDependencies)
-            inputs.property("compileOnlyDependencies", compileOnlyDependencies)
-            inputs
-                .files(compileClasspath)
-                .withPropertyName("compileClasspath")
-                .withNormalizer(ClasspathNormalizer::class.java)
-            inputs
-                .files(
-                    layout.buildDirectory.dir("classes/kotlin/main"),
-                    layout.buildDirectory.dir("classes/java/main"),
-                    layout.buildDirectory.dir("resources/main"),
-                ).withPropertyName("mainOutputs")
-                .withPathSensitivity(PathSensitivity.RELATIVE)
-            outputs.dir(generatedGradleResDir)
-
-            doLast {
-                val outputDir = generatedGradleResDir.get().asFile
-                outputDir.resolve("implementation.txt").writeTextIfChanged(implementationDependencies.get())
-                outputDir.resolve("compileOnly.txt").writeTextIfChanged(compileOnlyDependencies.get())
-
-                val mainFiles = ArrayList<String>()
-                fun addMainOutput(
-                    relativeDir: String,
-                    prefix: String,
-                ) {
-                    val root = layout.buildDirectory.dir(relativeDir).get().asFile
-                    if (!root.isDirectory) {
-                        return
-                    }
-                    root
-                        .walkTopDown()
-                        .filter(File::isFile)
-                        .map { "$prefix/${it.relativeTo(root).path.replace('\\', '/')}" }
-                        .sorted()
-                        .forEach(mainFiles::add)
-                }
-
-                addMainOutput("classes/kotlin/main", "kotlin/main")
-                addMainOutput("classes/java/main", "java/main")
-                addMainOutput("resources/main", "main")
-                outputDir.resolve("FileList.txt").writeTextIfChanged(mainFiles.joinToString("\n"))
-                outputDir.resolve("GitCommitHash.txt").writeTextIfChanged(gitCommitHash)
-            }
+            this.gitCommitHash.set(gitCommitHash)
+            this.implementationDependencies.set(implementationDependencies)
+            this.compileOnlyDependencies.set(compileOnlyDependencies)
+            this.compileClasspath.from(compileClasspath)
+            kotlinMainOutputs.from(layout.buildDirectory.dir("classes/kotlin/main"))
+            javaMainOutputs.from(layout.buildDirectory.dir("classes/java/main"))
+            mainResourceOutputs.from(layout.buildDirectory.dir("resources/main"))
+            outputDirectory.set(generatedGradleResDir)
         }
 
     // 迁移期从 source set 排除本地遗留副本，避免 processResources 和 sourcesJar 形成第二事实源。
@@ -315,21 +291,87 @@ fun Project.configureGradleRes() {
 
     tasks.named("jar", Jar::class.java) {
         dependsOn(generateGradleRes)
-        from(generatedResourcesDir)
+        from(generatedGradleResDir) {
+            into("gradleRes/${project.name}")
+        }
     }
 
     tasks.named("sourcesJar", Jar::class.java) {
         includeEmptyDirs = false
     }
+}
 
-    tasks.withType<Test>().configureEach {
-        dependsOn(generateGradleRes)
-        inputs
-            .dir(generatedGradleResDir)
-            .withPropertyName("generatedGradleRes")
-            .withPathSensitivity(PathSensitivity.RELATIVE)
-        doFirst {
-            classpath = files(generatedResourcesDir) + classpath
+abstract class GenerateGradleRes : DefaultTask() {
+    @get:Input
+    abstract val gitCommitHash: Property<String>
+
+    @get:Input
+    abstract val implementationDependencies: Property<String>
+
+    @get:Input
+    abstract val compileOnlyDependencies: Property<String>
+
+    @get:Classpath
+    abstract val compileClasspath: ConfigurableFileCollection
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    @get:IgnoreEmptyDirectories
+    abstract val kotlinMainOutputs: ConfigurableFileCollection
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    @get:IgnoreEmptyDirectories
+    abstract val javaMainOutputs: ConfigurableFileCollection
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    @get:IgnoreEmptyDirectories
+    abstract val mainResourceOutputs: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    init {
+        gitCommitHash.finalizeValueOnRead()
+        implementationDependencies.finalizeValueOnRead()
+        compileOnlyDependencies.finalizeValueOnRead()
+    }
+
+    @TaskAction
+    fun generate() {
+        val outputDir = outputDirectory.get().asFile
+        outputDir.resolve("implementation.txt").writeTextIfChanged(implementationDependencies.get())
+        outputDir.resolve("compileOnly.txt").writeTextIfChanged(compileOnlyDependencies.get())
+
+        val mainFiles = ArrayList<String>()
+        addMainOutputs(kotlinMainOutputs.singleFile, "kotlin/main", mainFiles)
+        addMainOutputs(javaMainOutputs.singleFile, "java/main", mainFiles)
+        addMainOutputs(mainResourceOutputs.singleFile, "main", mainFiles)
+        outputDir.resolve("FileList.txt").writeTextIfChanged(mainFiles.joinToString("\n"))
+        outputDir.resolve("GitCommitHash.txt").writeTextIfChanged(gitCommitHash.get())
+    }
+
+    private fun addMainOutputs(
+        root: File,
+        prefix: String,
+        destination: MutableList<String>,
+    ) {
+        if (!root.isDirectory) {
+            return
+        }
+        root
+            .walkTopDown()
+            .filter(File::isFile)
+            .map { "$prefix/${it.relativeTo(root).path.replace('\\', '/')}" }
+            .sorted()
+            .forEach(destination::add)
+    }
+
+    private fun File.writeTextIfChanged(content: String) {
+        parentFile?.mkdirs()
+        if (!isFile || readText() != content) {
+            writeText(content)
         }
     }
 }
@@ -345,110 +387,140 @@ private fun ResolvedArtifact.dependencyKey(): Triple<String, String, String?> =
 private fun List<String>.asDependencyText(): String =
     if (isEmpty()) "" else joinToString(separator = "\n", postfix = "\n")
 
-private fun File.writeTextIfChanged(content: String) {
-    parentFile?.mkdirs()
-    if (!isFile || readText() != content) {
-        writeText(content)
-    }
-}
-
 /*
  * GraalVM Native Image Support
  */
 fun Project.configureGraalVmAgent() {
-    if (project.findProperty("disableGraalVmAgent") == "true") {
+    val nativeImagePath = "META-INF/native-image/${project.group}/${project.name}"
+    val nativeImageDir = layout.buildDirectory.dir("generated-resources/$nativeImagePath")
+
+    // Jar 只注入明确归属本模块的 native-image 目录，不打包 generated-resources 下的其他文件。
+    tasks.named("jar", Jar::class.java) {
+        from(nativeImageDir) {
+            into(nativeImagePath)
+        }
+    }
+
+    if (providers.gradleProperty("disableGraalVmAgent").orNull == "true") {
         return
     }
 
-    val nativeImageDir =
-        layout.buildDirectory.dir("generated-resources/META-INF/native-image/${project.group}/${project.name}")
-
-    tasks.withType<Test>().configureEach {
-        val agentOutputDir = project.layout.buildDirectory.dir("native-image-agent/$name")
-
-        doFirst {
-            val agentOutput = agentOutputDir.get().asFile
-            agentOutput.mkdirs()
-            val accessFilterFile = createAccessFilterFile(project)
-
-            jvmArgs(
-                "-XX:+EnableDynamicAgentLoading",
-                "-Djdk.instrument.traceUsage=false",
-                "-agentlib:native-image-agent=" +
-                    "config-output-dir=${agentOutput.absolutePath}," +
-                    "access-filter-file=${accessFilterFile.absolutePath}",
+    val accessFilterFile = layout.buildDirectory.file("graalvm-filters/access-filter.json")
+    val generateAccessFilter =
+        tasks.register<WriteGraalAccessFilter>("generateGraalVmAccessFilter") {
+            group = "native-image"
+            description = "生成 GraalVM Native Image Agent 访问过滤器"
+            filterContent.set(
+                """
+                {
+                    "rules": [
+                        {"excludeClasses": "gradle.**"},
+                        {"excludeClasses": "org.gradle.**"},
+                        {"excludeClasses": "junit.**"},
+                        {"excludeClasses": "org.junit.**"},
+                        {"excludeClasses": "org.mockito.**"},
+                        {"excludeClasses": "net.bytebuddy.**"},
+                        {"excludeClasses": "com.sun.tools.attach.**"},
+                        {"excludeClasses": "org.opentest4j.**"},
+                        {"excludeClasses": "org.apiguardian.**"}
+                    ],
+                    "regexRules": [
+                        {"excludeClasses": ".*Test"},
+                        {"excludeClasses": ".*Test\\${'$'}.*"},
+                        {"excludeClasses": ".*Mock.*"},
+                        {"excludeClasses": ".*\\${'$'}MockitoMock\\${'$'}.*"}
+                    ]
+                }
+                """.trimIndent(),
             )
+            filterFile.set(accessFilterFile)
         }
 
-        doLast {
-            val agentOutput = agentOutputDir.get().asFile
-            val generatedMetadata = nativeImageDir.get().asFile
-            project.logger.lifecycle("复制 GraalVM Agent 配置: ${agentOutput.absolutePath}")
-            project.copyGraalConfigs(agentOutput, generatedMetadata)
+    // 发布 API 契约只验证外部编译，不执行库运行时；仅标准 test 参与 Native Image 元数据采集。
+    tasks.named("test", Test::class.java) {
+        val agentOutputDir = layout.buildDirectory.dir("native-image-agent/$name").get().asFile
+        val filterFile = accessFilterFile.get().asFile
+        val generatedMetadata = nativeImageDir.get().asFile
+
+        dependsOn(generateAccessFilter)
+        inputs
+            .file(accessFilterFile)
+            .withPropertyName("graalVmAccessFilter")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+        jvmArgs(
+            "-XX:+EnableDynamicAgentLoading",
+            "-Djdk.instrument.traceUsage=false",
+            "-agentlib:native-image-agent=" +
+                "config-output-dir=${agentOutputDir.absolutePath}," +
+                "access-filter-file=${filterFile.absolutePath}",
+        )
+        doFirst(PrepareGraalAgentOutput(agentOutputDir))
+        // 保持旧契约：仅在 Test 成功后复制，失败任务不会发布不完整元数据。
+        doLast(CopyGraalAgentOutput(agentOutputDir, generatedMetadata))
+    }
+}
+
+/** 将访问过滤器建模为显式输入输出，避免 Test 动作捕获 Project。 */
+abstract class WriteGraalAccessFilter : DefaultTask() {
+    @get:Input
+    abstract val filterContent: Property<String>
+
+    @get:OutputFile
+    abstract val filterFile: RegularFileProperty
+
+    @TaskAction
+    fun writeFilter() {
+        val target = filterFile.get().asFile
+        target.parentFile?.mkdirs()
+        val content = filterContent.get()
+        if (!target.isFile || target.readText() != content) {
+            target.writeText(content)
         }
     }
 }
 
-private fun createAccessFilterFile(project: Project): File {
-    val buildDir =
-        project.layout.buildDirectory
-            .get()
-            .asFile
-    val filterDir = File(buildDir, "graalvm-filters")
-    filterDir.mkdirs()
-
-    val filterFile = File(filterDir, "access-filter.json")
-    if (!filterFile.exists()) {
-        filterFile.createNewFile()
-    }
-    filterFile.writeText(
-        """
-        {
-            "rules": [
-                {"excludeClasses": "gradle.**"},
-                {"excludeClasses": "org.gradle.**"},
-                {"excludeClasses": "junit.**"},
-                {"excludeClasses": "org.junit.**"},
-                {"excludeClasses": "org.mockito.**"},
-                {"excludeClasses": "net.bytebuddy.**"},
-                {"excludeClasses": "com.sun.tools.attach.**"},
-                {"excludeClasses": "org.opentest4j.**"},
-                {"excludeClasses": "org.apiguardian.**"}
-            ],
-            "regexRules": [
-                {"excludeClasses": ".*Test"},
-                {"excludeClasses": ".*Test\\$.*"},
-                {"excludeClasses": ".*Mock.*"},
-                {"excludeClasses": ".*\\'$'MockitoMock\\$.*"}
-            ]
+/** Test 启动前只创建 agent 输出目录，Action 不持有 Gradle 模型对象。 */
+class PrepareGraalAgentOutput(
+    private val outputDirectory: File,
+) : Action<Task> {
+    override fun execute(task: Task) {
+        check(outputDirectory.mkdirs() || outputDirectory.isDirectory) {
+            "无法创建 GraalVM Agent 输出目录: ${outputDirectory.absolutePath}"
         }
-        """.trimIndent(),
-    )
-    return filterFile
+    }
 }
 
-private fun Project.copyGraalConfigs(
-    sourceDir: File,
-    targetDir: File,
-) {
-    targetDir.mkdirs()
+/** Test 成功后复制 agent JSON，并保留 native-image.properties 的既有内容。 */
+class CopyGraalAgentOutput(
+    private val sourceDirectory: File,
+    private val targetDirectory: File,
+) : Action<Task> {
+    override fun execute(task: Task) {
+        check(targetDirectory.mkdirs() || targetDirectory.isDirectory) {
+            "无法创建 Native Image 元数据目录: ${targetDirectory.absolutePath}"
+        }
+        task.logger.lifecycle("复制 GraalVM Agent 配置: ${sourceDirectory.absolutePath}")
 
-    val propertiesFile = File(targetDir, "native-image.properties")
-    if (!propertiesFile.exists()) {
-        propertiesFile.createNewFile()
-        propertiesFile.writeText(
-            """
-            Args = --no-fallback
-            """.trimIndent(),
-        )
-    }
+        val propertiesFile = File(targetDirectory, "native-image.properties")
+        if (!propertiesFile.exists()) {
+            propertiesFile.writeText("Args = --no-fallback")
+        }
 
-    sourceDir.listFiles()?.filter { it.isFile && it.name.endsWith(".json") }?.forEach { sourceFile ->
-        val targetFile = File(targetDir, sourceFile.name)
-        Files.copy(
-            sourceFile.toPath(),
-            targetFile.toPath(),
-            StandardCopyOption.REPLACE_EXISTING,
-        )
+        val predefinedClassesConfig = "predefined-classes-config.json"
+        val stalePredefinedClassesConfig = targetDirectory.resolve(predefinedClassesConfig)
+        check(!stalePredefinedClassesConfig.exists() || stalePredefinedClassesConfig.delete()) {
+            "无法删除不完整的 Native Image 配置: ${stalePredefinedClassesConfig.absolutePath}"
+        }
+        sourceDirectory
+            .listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".json") && it.name != predefinedClassesConfig }
+            ?.sortedBy(File::getName)
+            ?.forEach { sourceFile ->
+                Files.copy(
+                    sourceFile.toPath(),
+                    targetDirectory.resolve(sourceFile.name).toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
     }
 }

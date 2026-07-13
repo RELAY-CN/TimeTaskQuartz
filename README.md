@@ -469,7 +469,15 @@ gradle test
 
 # 打包
 gradle jar
+
+# 采集本轮 Native Image 元数据后打包（两条命令之间不要执行 clean）
+gradle test --rerun-tasks
+gradle jar
 ```
+
+`test` 成功后会把 GraalVM Agent 元数据写入 `build/generated-resources`；后续独立执行的
+`jar` 会将其注入标准运行时路径。`--rerun-tasks` 用于确保本轮实际执行 Agent 采集；当前任务图
+会在采集完成前先构建项目 JAR，因此不能用反向依赖把这两个阶段合并为单一任务。
 
 ## 许可证
 
